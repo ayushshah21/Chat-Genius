@@ -18,5 +18,8 @@ router.post("/:channelId/join", (req, res) => {
 router.post("/:channelId/leave", (req, res) => {
     channelController.leaveChannel(req, res)
 });
+router.post("/dm", (req, res) => {
+    channelController.createDMChannel(req, res);
+});
 
 export default router; 

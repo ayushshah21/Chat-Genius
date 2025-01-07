@@ -8,12 +8,15 @@ import { API_CONFIG } from "../config/api.config";
 import { Channel } from "../types/channel";
 import { Menu, X } from "lucide-react";
 import { socket } from "../lib/socket";
+import { User } from "../types/user";
 
 export default function Channels() {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+  const [selectedDMUser, setSelectedDMUser] = useState<string | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
     console.log("Channels: Component mounted");
@@ -46,6 +49,25 @@ export default function Channels() {
     };
   }, []);
 
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+        );
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const handleDMSelect = async (userId: string) => {
+    setSelectedChannel(null); // Deselect any channel
+    setSelectedDMUser(userId);
+  };
+
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}
@@ -55,16 +77,21 @@ export default function Channels() {
         } transform transition-transform duration-300 ease-in-out fixed inset-y-0 left-0 z-30 w-64 bg-white shadow-lg md:relative md:translate-x-0`}
       >
         <ChannelList
-          channels={channels}
+          channels={channels.filter((c) => c.type !== "DM")} // Only show regular channels
           onCreateChannel={() => setIsCreateModalOpen(true)}
-          onChannelSelect={setSelectedChannel}
+          onChannelSelect={(channelId) => {
+            setSelectedChannel(channelId);
+            setSelectedDMUser(null); // Deselect any DM
+          }}
           selectedChannelId={selectedChannel}
+          onDirectMessageSelect={handleDMSelect}
+          selectedDMUserId={selectedDMUser}
         />
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Channel Header */}
+        {/* Channel/DM Header */}
         <div className="h-16 bg-white shadow-sm flex items-center px-4">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -75,29 +102,33 @@ export default function Channels() {
           <h2 className="font-semibold text-lg text-gray-800">
             {selectedChannel
               ? `# ${channels.find((c) => c.id === selectedChannel)?.name}`
-              : "Select a channel"}
+              : selectedDMUser
+              ? users.find((u) => u.id === selectedDMUser)?.name ||
+                users.find((u) => u.id === selectedDMUser)?.email
+              : "Select a conversation"}
           </h2>
         </div>
 
         {/* Messages Area */}
         <div className="flex-1 overflow-hidden bg-white">
-          {selectedChannel ? (
-            <MessageList channelId={selectedChannel} />
+          {selectedChannel || selectedDMUser ? (
+            <MessageList
+              channelId={selectedChannel}
+              dmUserId={selectedDMUser}
+            />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-500">
-              Select a channel to start messaging
+              Select a channel or user to start messaging
             </div>
           )}
         </div>
 
         {/* Message Input */}
-        {selectedChannel && (
+        {(selectedChannel || selectedDMUser) && (
           <div className="bg-white border-t border-gray-200">
             <MessageInput
               channelId={selectedChannel}
-              onMessageSent={() => {
-                // Optionally refresh messages or handle via WebSocket
-              }}
+              dmUserId={selectedDMUser}
             />
           </div>
         )}
@@ -109,7 +140,6 @@ export default function Channels() {
         onClose={() => setIsCreateModalOpen(false)}
         onChannelCreated={() => {
           setIsCreateModalOpen(false);
-          // Refresh channels list
         }}
       />
     </div>

@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { Send } from 'lucide-react';
+import { Send } from "lucide-react";
 import { socket } from "../../lib/socket";
 
 interface Props {
-  channelId: string;
+  channelId?: string | null;
+  dmUserId?: string | null;
+  onSend?: (content: string) => Promise<void>;
   onMessageSent?: () => void;
 }
 
-export default function MessageInput({ channelId }: Props) {
+export default function MessageInput({
+  channelId,
+  dmUserId,
+  onMessageSent,
+}: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -17,11 +23,20 @@ export default function MessageInput({ channelId }: Props) {
 
     setSending(true);
     try {
-      socket.emit("send_message", {
-        content: message,
-        channelId,
-      });
+      if (channelId) {
+        socket.emit("send_message", {
+          content: message,
+          channelId,
+        });
+      } else if (dmUserId) {
+        socket.emit("send_dm", {
+          content: message,
+          receiverId: dmUserId,
+        });
+      }
+
       setMessage("");
+      onMessageSent?.();
     } catch (error) {
       console.error("Failed to send message:", error);
     } finally {

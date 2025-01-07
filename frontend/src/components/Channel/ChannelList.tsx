@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { Channel } from "../../types/channel";
-import { Plus, Hash, Lock } from 'lucide-react';
+import { Plus, Hash, Lock } from "lucide-react";
+import DirectMessagesList from "../DirectMessages/DirectMessagesList";
 
 interface Props {
   channels: Channel[];
   onCreateChannel: () => void;
   onChannelSelect: (channelId: string) => void;
   selectedChannelId: string | null;
+  onDirectMessageSelect: (userId: string) => void;
+  selectedDMUserId: string | null;
 }
 
 export default function ChannelList({
@@ -14,6 +17,7 @@ export default function ChannelList({
   onCreateChannel,
   onChannelSelect,
   selectedChannelId,
+  onDirectMessageSelect,
 }: Props) {
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +32,7 @@ export default function ChannelList({
       </div>
     );
   }
-
+  console.log("ChannelList: Rendering with channels:", channels);
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
@@ -40,15 +44,27 @@ export default function ChannelList({
           <Plus className="w-5 h-5" />
         </button>
       </div>
-      <div className="overflow-y-auto flex-1">
-        {channels.map((channel) => (
-          <ChannelItem
-            key={channel.id}
-            channel={channel}
-            isSelected={channel.id === selectedChannelId}
-            onSelect={onChannelSelect}
-          />
-        ))}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mb-4">
+          {channels.map((channel) => (
+            <ChannelItem
+              key={channel.id}
+              channel={channel}
+              isSelected={channel.id === selectedChannelId}
+              onSelect={onChannelSelect}
+            />
+          ))}
+        </div>
+
+        <DirectMessagesList
+          onUserSelect={(userId) => {
+            console.log(
+              "ChannelList: Forwarding DM user selection to parent:",
+              userId
+            );
+            onDirectMessageSelect(userId);
+          }}
+        />
       </div>
     </div>
   );

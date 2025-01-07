@@ -16,6 +16,7 @@ export const API_CONFIG = {
             GET: (id: string) => `/api/channels/${id}`,
             JOIN: (id: string) => `/api/channels/${id}/join`,
             LEAVE: (id: string) => `/api/channels/${id}/leave`,
+            CREATE_DM: '/api/channels/dm',
         },
         USER: {
             PROFILE: '/api/user/profile',
@@ -24,6 +25,13 @@ export const API_CONFIG = {
         MESSAGES: {
             CREATE: '/api/messages',
             CHANNEL: '/api/messages/channel',
+        },
+        USERS: {
+            AVAILABLE: '/api/users/available',
+        },
+        DIRECT_MESSAGES: {
+            CREATE: '/api/direct-messages',
+            GET: (otherUserId: string) => `/api/direct-messages/${otherUserId}`,
         }
     }
 }; 

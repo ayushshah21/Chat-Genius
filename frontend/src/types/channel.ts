@@ -5,7 +5,7 @@ export type ChannelType = 'PUBLIC' | 'PRIVATE' | 'DM';
 export interface Channel {
     id: string;
     name: string;
-    type: 'PUBLIC' | 'PRIVATE';
+    type: ChannelType;
     _count?: {
         messages: number;
     };

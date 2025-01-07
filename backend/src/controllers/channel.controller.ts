@@ -91,4 +91,20 @@ export async function leaveChannel(req: Request, res: Response) {
     } catch (error: any) {
         res.status(400).json({ error: error.message });
     }
+}
+
+export async function createDMChannel(req: Request, res: Response) {
+    const { otherUserId } = req.body;
+    const userId = (req as any).userId;
+
+    console.log("Channel Controller: Creating DM channel", { userId, otherUserId });
+
+    try {
+        const channel = await channelService.createDMChannel(userId, otherUserId);
+        console.log("Channel Controller: DM channel created:", channel);
+        res.json(channel);
+    } catch (error: any) {
+        console.error("Channel Controller: Failed to create DM channel:", error);
+        res.status(400).json({ error: error.message });
+    }
 } 

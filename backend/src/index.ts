@@ -9,6 +9,8 @@ import session from "express-session";
 import channelRoutes from "./routes/channel.routes";
 import { setupSocketIO } from "./socket/socket.service";
 import messageRoutes from "./routes/message.routes";
+import userRoutes from "./routes/user.routes";
+import directMessageRoutes from "./routes/directMessage.routes";
 
 
 dotenv.config();
@@ -45,6 +47,8 @@ setupSocketIO(io);
 app.use("/api/auth", authRoutes);
 app.use("/api/channels", channelRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/direct-messages", directMessageRoutes);
 
 const PORT = process.env.PORT || 4000;
 

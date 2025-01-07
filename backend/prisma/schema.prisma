@@ -8,24 +8,26 @@ generator client {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String? // For local authentication
-  googleId  String?   @unique
-  name      String?
-  avatarUrl String?
-  status    String?   @default("offline")
-  channels  Channel[] @relation("ChannelMembers")
-  messages  Message[]
-  createdBy Channel[] @relation("ChannelCreator")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String          @id @default(uuid())
+  email       String          @unique
+  password    String? // For local authentication
+  googleId    String?         @unique
+  name        String?
+  avatarUrl   String?
+  status      String?         @default("offline")
+  channels    Channel[]       @relation("ChannelMembers")
+  messages    Message[]
+  createdBy   Channel[]       @relation("ChannelCreator")
+  sentDMs     DirectMessage[] @relation("SenderDMs")
+  receivedDMs DirectMessage[] @relation("ReceiverDMs")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
 
 model Channel {
   id        String    @id @default(uuid())
   name      String
-  type      String // "PUBLIC" | "PRIVATE" | "DM"
+  type      String // "PUBLIC" | "PRIVATE"
   createdBy String
   isPrivate Boolean   @default(false)
   messages  Message[]
@@ -46,4 +48,15 @@ model Message {
   replies   Message[] @relation("ThreadMessages")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+model DirectMessage {
+  id         String   @id @default(uuid())
+  content    String
+  senderId   String
+  receiverId String
+  sender     User     @relation("SenderDMs", fields: [senderId], references: [id])
+  receiver   User     @relation("ReceiverDMs", fields: [receiverId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

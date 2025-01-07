@@ -81,5 +81,47 @@ export function setupSocketIO(server: Server) {
             io.emit('new_channel', channel);
             console.log('Socket: Emitted new_channel event to all clients');
         });
+
+        socket.on('join_dm', (userId: string) => {
+            socket.join(`dm:${userId}`);
+            console.log(`User ${socket.id} joined DM room for user ${userId}`);
+        });
+
+        socket.on('leave_dm', (userId: string) => {
+            socket.leave(`dm:${userId}`);
+            console.log(`User ${socket.id} left DM room for user ${userId}`);
+        });
+
+        socket.on('send_dm', async (data: {
+            content: string;
+            receiverId: string;
+        }) => {
+            const token = socket.handshake.auth.token;
+            if (!token) {
+                socket.emit('message_error', { error: 'Authentication required' });
+                return;
+            }
+
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                const message = await prisma.directMessage.create({
+                    data: {
+                        content: data.content,
+                        senderId: decoded.userId,
+                        receiverId: data.receiverId,
+                    },
+                    include: {
+                        sender: true,
+                        receiver: true,
+                    }
+                });
+
+                // Emit to both sender's and receiver's DM rooms
+                io.to(`dm:${decoded.userId}`).to(`dm:${data.receiverId}`).emit('new_dm', message);
+            } catch (error) {
+                console.error('Error sending DM:', error);
+                socket.emit('message_error', { error: 'Failed to send message' });
+            }
+        });
     });
 } 
