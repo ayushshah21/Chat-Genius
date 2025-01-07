@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Database, Server, Layout, Terminal } from "lucide-react";
+import { ArrowRight, Database, Layout, Terminal, MessageSquare, Users, Shield } from 'lucide-react';
 import axiosInstance from "../lib/axios";
 import { API_CONFIG } from "../config/api.config";
 
@@ -14,7 +14,7 @@ export default function Home() {
     const token = searchParams.get("token");
     if (token) {
       localStorage.setItem("token", token);
-      navigate("/dashboard");
+      navigate("/channels");
       return;
     }
 
@@ -61,7 +61,7 @@ export default function Home() {
           <div className="flex justify-between h-16 items-center">
             <div className="flex-shrink-0">
               <Link to="/" className="text-blue-600 font-bold text-xl">
-                PERN Stack
+                ChatGenius
               </Link>
             </div>
             <div className="flex items-center space-x-4">
@@ -69,10 +69,10 @@ export default function Home() {
                 <>
                   <span className="text-gray-700">Welcome, {userEmail}</span>
                   <Link
-                    to="/dashboard"
+                    to="/channels"
                     className="text-blue-600 hover:text-blue-700 px-3 py-2 rounded-md text-sm font-medium"
                   >
-                    Dashboard
+                    Channels
                   </Link>
                   <button
                     onClick={handleLogout}
@@ -91,7 +91,7 @@ export default function Home() {
                   </Link>
                   <Link
                     to="/register"
-                    className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium"
+                    className="bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md text-sm font-medium transition duration-150 ease-in-out"
                   >
                     Sign up
                   </Link>
@@ -110,17 +110,15 @@ export default function Home() {
               <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl md:text-6xl lg:text-7xl">
                 <span className="block">Your Ultimate</span>
                 <span className="block text-blue-600 mt-2">
-                  PERN Stack Solution
+                  AI-Powered Chat Solution
                 </span>
               </h1>
               <p className="mt-6 text-xl text-gray-500 max-w-3xl">
-                Start building scalable applications with PostgreSQL, Express,
-                React, and Node.js. Everything you need to create modern web
-                applications.
+                Experience the future of communication with ChatGenius. Our AI-powered platform offers seamless, intelligent conversations for both personal and business use.
               </p>
               <div className="mt-10">
                 <Link
-                  to="/login"
+                  to="/register"
                   className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-full text-white bg-blue-600 hover:bg-blue-700 md:py-4 md:text-lg md:px-10 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-lg"
                 >
                   Get started
@@ -140,15 +138,15 @@ export default function Home() {
               Features
             </h2>
             <p className="mt-2 text-3xl font-extrabold text-gray-900 sm:text-4xl lg:text-5xl">
-              Everything you need to build
+              Everything you need for smart communication
             </p>
             <p className="mt-4 max-w-2xl text-xl text-gray-500 lg:mx-auto">
-              A complete solution for your next web application project.
+              ChatGenius combines cutting-edge AI with user-friendly design to revolutionize your chat experience.
             </p>
           </div>
 
           <div className="mt-20">
-            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {features.map((feature) => (
                 <div
                   key={feature.name}
@@ -173,15 +171,15 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl font-extrabold text-white sm:text-4xl lg:text-5xl">
-              <span className="block">Ready to dive in?</span>
-              <span className="block mt-2">Start building today.</span>
+              <span className="block">Ready to experience the future?</span>
+              <span className="block mt-2">Start chatting with AI today.</span>
             </h2>
             <p className="mt-4 text-xl leading-6 text-blue-100">
-              Join thousands of developers already using our platform.
+              Join thousands of users already revolutionizing their communication with ChatGenius.
             </p>
             <div className="mt-10">
               <Link
-                to="/login"
+                to="/register"
                 className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-full text-blue-600 bg-white hover:bg-blue-50 md:py-4 md:text-lg md:px-10 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-lg"
               >
                 Get started
@@ -197,24 +195,35 @@ export default function Home() {
 
 const features = [
   {
-    name: "PostgreSQL Database",
+    name: "AI-Powered Conversations",
     description:
-      "Powerful relational database for robust data storage and management.",
-    icon: <Database className="w-6 h-6 text-blue-600" />,
+      "Engage in intelligent, context-aware chats with our advanced AI technology.",
+    icon: <MessageSquare className="w-6 h-6 text-blue-600" />,
   },
   {
-    name: "Express Backend",
-    description: "Fast, unopinionated web framework for Node.js.",
-    icon: <Server className="w-6 h-6 text-blue-600" />,
+    name: "Real-time Collaboration",
+    description: "Seamlessly work together with multiple users in real-time chat rooms.",
+    icon: <Users className="w-6 h-6 text-blue-600" />,
   },
   {
-    name: "React Frontend",
-    description: "Modern UI library for building interactive user interfaces.",
+    name: "Secure Communication",
+    description: "Your conversations are protected with end-to-end encryption and advanced security measures.",
+    icon: <Shield className="w-6 h-6 text-blue-600" />,
+  },
+  {
+    name: "Smart Integrations",
+    description: "Connect with your favorite tools and services for enhanced productivity.",
     icon: <Layout className="w-6 h-6 text-blue-600" />,
   },
   {
-    name: "Node.js Runtime",
-    description: "JavaScript runtime built on Chrome's V8 JavaScript engine.",
+    name: "Customizable Experience",
+    description: "Tailor the chat interface and AI responses to suit your preferences and needs.",
     icon: <Terminal className="w-6 h-6 text-blue-600" />,
   },
+  {
+    name: "Analytics and Insights",
+    description: "Gain valuable insights from your conversations with advanced analytics tools.",
+    icon: <Database className="w-6 h-6 text-blue-600" />,
+  },
 ];
+

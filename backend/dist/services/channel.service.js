@@ -58,17 +58,37 @@ function getUserChannels(userId) {
     return __awaiter(this, void 0, void 0, function* () {
         return yield prisma.channel.findMany({
             where: {
-                members: {
-                    some: {
-                        id: userId
+                OR: [
+                    { type: "PUBLIC" }, // All public channels
+                    {
+                        members: {
+                            some: { id: userId }
+                        }
                     }
-                }
+                ]
             },
             include: {
-                members: true,
+                members: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true,
+                        avatarUrl: true
+                    }
+                },
+                creator: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                },
                 _count: {
                     select: { messages: true }
                 }
+            },
+            orderBy: {
+                createdAt: 'desc'
             }
         });
     });

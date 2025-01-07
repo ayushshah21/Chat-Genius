@@ -11,11 +11,11 @@
 
 ### Day 1: Basic Channel CRUD
 
-- [ ] Create channel functionality (UI working)
-- [ ] Channel listing
-- [ ] Channel deletion (by creator)
-- [ ] Channel editing (name, type)
-- [ ] Error handling & validations
+- [x] Create channel functionality (UI working)
+- [x] Channel listing
+- [] Channel deletion (by creator)
+- [] Channel editing (name, type)
+- [] Error handling & validations
 
 ### Day 2: Channel Access & Membership
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { X } from "lucide-react";
-import {ChannelType } from "../../types/channel";
+import { X } from 'lucide-react';
+import { ChannelType } from "../../types/channel";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 
@@ -40,13 +40,13 @@ export default function CreateChannelModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl transform transition-all duration-300 ease-in-out">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Create Channel</h2>
+          <h2 className="text-2xl font-semibold text-gray-800">Create Channel</h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-full"
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors duration-200"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,7 +61,7 @@ export default function CreateChannelModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               placeholder="e.g. general"
               required
             />
@@ -74,7 +74,7 @@ export default function CreateChannelModal({
             <select
               value={type}
               onChange={(e) => setType(e.target.value as ChannelType)}
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
             >
               <option value="PUBLIC">Public</option>
               <option value="PRIVATE">Private</option>
@@ -85,14 +85,14 @@ export default function CreateChannelModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md"
+              className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors duration-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
             >
               {loading ? "Creating..." : "Create Channel"}
             </button>

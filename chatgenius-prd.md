@@ -8,7 +8,7 @@ ChatGenius is a real-time workplace communication platform enhanced with AI capa
 
 ### Core Stack
 
-- **Frontend**: React + TypeScript + Tailwind + Shadcn
+- **Frontend**: React + TypeScript + Tailwind + lucide-react
 - **Backend**: Node.js (Express) + TypeScript
 - **Database**: PostgreSQL
 - **Real-time**: Socket.io
@@ -70,71 +70,6 @@ ChatGenius is a real-time workplace communication platform enhanced with AI capa
 - [P3] Expression system
 
 ## 4. Technical Architecture
-
-### Database Schema
-
-```sql
-model User {
-  id            String     @id @default(uuid())
-  email         String     @unique
-  password      String?    // For local authentication
-  googleId      String?    @unique
-  name          String?
-  avatarUrl     String?
-  status        String?    @default("offline")
-  channels      Channel[]  @relation("ChannelMembers")
-  messages      Message[]
-  createdBy     Channel[]  @relation("ChannelCreator")
-  aiAvatar      AIAvatar?
-  aiContexts    AIContext[]
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-}
-
-model Channel {
-  id        String    @id @default(uuid())
-  name      String
-  type      String    // "PUBLIC" | "PRIVATE" | "DM"
-  createdBy String
-  isPrivate Boolean   @default(false)
-  messages  Message[]
-  members   User[]    @relation("ChannelMembers")
-  creator   User      @relation("ChannelCreator", fields: [createdBy], references: [id])
-  createdAt DateTime  @default(now())
-}
-
-model Message {
-  id            String    @id @default(uuid())
-  channelId     String
-  userId        String
-  content       String    @db.Text
-  parentId      String?
-  isAiGenerated Boolean   @default(false)
-  channel       Channel   @relation(fields: [channelId], references: [id])
-  user          User      @relation(fields: [userId], references: [id])
-  parent        Message?  @relation("ThreadMessages", fields: [parentId], references: [id])
-  replies       Message[] @relation("ThreadMessages")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-model AIAvatar {
-  id                String   @id @default(uuid())
-  userId           String    @unique
-  personalityConfig Json
-  user             User      @relation(fields: [userId], references: [id])
-  createdAt        DateTime  @default(now())
-}
-
-model AIContext {
-  id        String   @id @default(uuid())
-  userId    String
-  embedding Unsupported("vector(1536)")
-  content   String   @db.Text
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-}
-```
 
 ### API Routes
 

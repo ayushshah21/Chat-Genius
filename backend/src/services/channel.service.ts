@@ -46,17 +46,37 @@ export async function getChannelById(channelId: string) {
 export async function getUserChannels(userId: string) {
     return await prisma.channel.findMany({
         where: {
-            members: {
-                some: {
-                    id: userId
+            OR: [
+                { type: "PUBLIC" },  // All public channels
+                {
+                    members: {
+                        some: { id: userId }
+                    }
                 }
-            }
+            ]
         },
         include: {
-            members: true,
+            members: {
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    avatarUrl: true
+                }
+            },
+            creator: {
+                select: {
+                    id: true,
+                    email: true,
+                    name: true
+                }
+            },
             _count: {
                 select: { messages: true }
             }
+        },
+        orderBy: {
+            createdAt: 'desc'
         }
     });
 }

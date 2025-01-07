@@ -20,6 +20,10 @@ export const API_CONFIG = {
         USER: {
             PROFILE: '/api/user/profile',
             SETTINGS: '/api/user/settings'
+        },
+        MESSAGES: {
+            CREATE: '/api/messages',
+            CHANNEL: '/api/messages/channel',
         }
     }
 }; 

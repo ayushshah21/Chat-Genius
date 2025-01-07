@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
+import Channels from "./pages/Channels";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -13,13 +13,15 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
         <Route
-          path="/dashboard"
+          path="/channels"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Channels />
             </ProtectedRoute>
           }
-        />
+        >
+          <Route path=":channelId" element={<Channels />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

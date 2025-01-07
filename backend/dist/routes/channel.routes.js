@@ -45,7 +45,6 @@ router.get("/:channelId", (req, res) => {
     channelController.getChannelById(req, res);
 });
 router.post("/:channelId/join", (req, res) => {
-    console.log('hey there');
     channelController.joinChannel(req, res);
 });
 router.post("/:channelId/leave", (req, res) => {

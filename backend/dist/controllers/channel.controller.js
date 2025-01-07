@@ -96,7 +96,6 @@ function getChannelById(req, res) {
 }
 function joinChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log('in here');
         const { channelId } = req.params;
         const userId = req.userId;
         try {
