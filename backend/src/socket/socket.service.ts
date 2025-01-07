@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { createMessage } from '../services/message.service';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import * as userService from '../services/user.service';
 
 const prisma = new PrismaClient();
 
@@ -10,8 +11,22 @@ export let io: Server;
 export function setupSocketIO(server: Server) {
     io = server;  // Assign the server instance
 
-    io.on('connection', (socket) => {
+    io.on('connection', async (socket) => {
         console.log('Socket connected:', socket.id);
+
+        // Handle user presence on connection
+        try {
+            const token = socket.handshake.auth.token;
+            if (token) {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                await userService.updateUserStatus(decoded.userId, 'online');
+
+                // Store userId in socket for disconnection handling
+                socket.data.userId = decoded.userId;
+            }
+        } catch (error) {
+            console.error('Error handling user presence:', error);
+        }
 
         // Join a channel
         socket.on('join_channel', (channelId: string) => {
@@ -72,8 +87,27 @@ export function setupSocketIO(server: Server) {
             socket.to(data.channelId).emit('user_stop_typing', { userId: data.userId });
         });
 
-        socket.on('disconnect', () => {
+        // Handle user presence on disconnection
+        socket.on('disconnect', async () => {
             console.log('Socket disconnected:', socket.id);
+            if (socket.data.userId) {
+                try {
+                    await userService.updateUserStatus(socket.data.userId, 'offline');
+                } catch (error) {
+                    console.error('Error updating user status on disconnect:', error);
+                }
+            }
+        });
+
+        // Manual status update handler
+        socket.on('update_status', async (status: string) => {
+            if (socket.data.userId) {
+                try {
+                    await userService.updateUserStatus(socket.data.userId, status);
+                } catch (error) {
+                    console.error('Error updating user status:', error);
+                }
+            }
         });
 
         socket.on('create_channel', async (channel) => {

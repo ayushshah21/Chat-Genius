@@ -9,21 +9,40 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.updateUserStatus = updateUserStatus;
 exports.getUserById = getUserById;
 const client_1 = require("@prisma/client");
+const socket_service_1 = require("../socket/socket.service");
 const prisma = new client_1.PrismaClient();
+function updateUserStatus(userId, status) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const user = yield prisma.user.update({
+            where: { id: userId },
+            data: { status },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                avatarUrl: true,
+                status: true,
+            }
+        });
+        // Broadcast the status update to all connected clients
+        socket_service_1.io.emit('user.status', user);
+        return user;
+    });
+}
 function getUserById(userId) {
     return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const user = yield prisma.user.findUnique({
-                where: { id: userId },
-                select: { email: true } // Select only the email field
-            });
-            return user;
-        }
-        catch (error) {
-            console.error("Error fetching user by ID:", error);
-            throw new Error("User not found");
-        }
+        return yield prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                avatarUrl: true,
+                status: true,
+            }
+        });
     });
 }

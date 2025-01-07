@@ -3,6 +3,7 @@ import { User } from "../../types/user";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { UserCircle } from "lucide-react";
+import { useUserStatus } from "../../contexts/UserStatusContext";
 
 interface Props {
   onUserSelect?: (userId: string) => void;
@@ -15,6 +16,7 @@ export default function DirectMessagesList({
 }: Props) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const { userStatuses } = useUserStatus();
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -35,7 +37,6 @@ export default function DirectMessagesList({
     fetchUsers();
   }, []);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUserClick = async (userId: string, userName: string | null) => {
     console.log("DirectMessagesList: User clicked:", { userId, userName });
     try {
@@ -86,8 +87,13 @@ export default function DirectMessagesList({
           </span>
           <span
             className={`ml-2 w-2 h-2 rounded-full ${
-              user.status === "online" ? "bg-green-500" : "bg-gray-300"
+              userStatuses[user.id] === "online"
+                ? "bg-green-500"
+                : userStatuses[user.id] === "away"
+                ? "bg-yellow-500"
+                : "bg-red-500"
             }`}
+            title={userStatuses[user.id] || "offline"}
           />
         </button>
       ))}
