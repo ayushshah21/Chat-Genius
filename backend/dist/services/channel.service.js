@@ -15,6 +15,7 @@ exports.getUserChannels = getUserChannels;
 exports.addMemberToChannel = addMemberToChannel;
 exports.removeMemberFromChannel = removeMemberFromChannel;
 const client_1 = require("@prisma/client");
+const socket_service_1 = require("../socket/socket.service");
 const prisma = new client_1.PrismaClient();
 function createChannel(name_1, type_1, createdById_1) {
     return __awaiter(this, arguments, void 0, function* (name, type, createdById, memberIds = []) {
@@ -32,6 +33,9 @@ function createChannel(name_1, type_1, createdById_1) {
                 creator: true
             }
         });
+        // Emit the new channel to all connected clients
+        console.log('Channel Service: Broadcasting new channel:', channel.name);
+        socket_service_1.io.emit('new_channel', channel);
         return channel;
     });
 }

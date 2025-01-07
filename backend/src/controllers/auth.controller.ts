@@ -4,9 +4,9 @@ import { getUserById } from "../services/user.service";
 import { ENV_CONFIG } from '../config/env.config';
 
 export async function register(req: Request, res: Response) {
-    const { email, password } = req.body;
+    const { email, password, name } = req.body;
     try {
-        const user = await authService.registerUser(email, password);
+        const user = await authService.registerUser(email, password, name);
         const token = await authService.generateJWTforGoogleUser(user.id);
         return res.status(201).json({ message: "User registered", user, token });
     } catch (error: any) {

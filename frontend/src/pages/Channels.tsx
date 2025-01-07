@@ -6,7 +6,8 @@ import MessageInput from "../components/Message/MessageInput";
 import axiosInstance from "../lib/axios";
 import { API_CONFIG } from "../config/api.config";
 import { Channel } from "../types/channel";
-import { Menu, X } from 'lucide-react';
+import { Menu, X } from "lucide-react";
+import { socket } from "../lib/socket";
 
 export default function Channels() {
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
@@ -15,17 +16,34 @@ export default function Channels() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
+    console.log("Channels: Component mounted");
+
     const fetchChannels = async () => {
       try {
         const response = await axiosInstance.get(
           API_CONFIG.ENDPOINTS.CHANNELS.LIST
         );
+        console.log("Channels: Fetched initial channels:", response.data);
         setChannels(response.data);
       } catch (error) {
         console.error("Failed to fetch channels:", error);
       }
     };
     fetchChannels();
+
+    // Listen for new channels
+    socket.on("new_channel", (channel: Channel) => {
+      console.log("Channels: Received new_channel event:", channel);
+      setChannels((prev) => {
+        console.log("Channels: Updating state with new channel");
+        return [...prev, channel];
+      });
+    });
+
+    return () => {
+      console.log("Channels: Cleaning up socket listener");
+      socket.off("new_channel");
+    };
   }, []);
 
   return (

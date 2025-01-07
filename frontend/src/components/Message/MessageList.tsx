@@ -22,10 +22,10 @@ export default function MessageList({ channelId }: Props) {
   }, [messages]);
 
   useEffect(() => {
-    socket.emit("join_channel", channelId);
-
     const fetchMessages = async () => {
       try {
+        socket.emit("join_channel", channelId);
+
         const response = await axiosInstance.get(
           `${API_CONFIG.ENDPOINTS.MESSAGES.CHANNEL}/${channelId}`
         );
@@ -73,8 +73,8 @@ export default function MessageList({ channelId }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4">
-      <div className="flex flex-col space-y-4">
+    <div className="flex-1 overflow-y-auto p-4 h-full">
+      <div className="flex flex-col space-y-4 min-h-0">
         {messages.map((message) => (
           <MessageItem key={message.id} message={message} />
         ))}

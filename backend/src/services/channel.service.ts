@@ -1,4 +1,5 @@
 import { PrismaClient, Channel } from "@prisma/client";
+import { io } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
@@ -22,6 +23,11 @@ export async function createChannel(
             creator: true
         }
     });
+
+    // Emit the new channel to all connected clients
+    console.log('Channel Service: Broadcasting new channel:', channel.name);
+    io.emit('new_channel', channel);
+
     return channel;
 }
 

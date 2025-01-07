@@ -51,9 +51,9 @@ const user_service_1 = require("../services/user.service");
 const env_config_1 = require("../config/env.config");
 function register(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { email, password } = req.body;
+        const { email, password, name } = req.body;
         try {
-            const user = yield authService.registerUser(email, password);
+            const user = yield authService.registerUser(email, password, name);
             const token = yield authService.generateJWTforGoogleUser(user.id);
             return res.status(201).json({ message: "User registered", user, token });
         }

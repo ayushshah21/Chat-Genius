@@ -20,18 +20,51 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma = new client_1.PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
-function registerUser(email, password) {
+function registerUser(email, password, name) {
     return __awaiter(this, void 0, void 0, function* () {
-        // Hash password
         const hashedPassword = yield bcrypt_1.default.hash(password, 10);
-        // Create user
-        const user = yield prisma.user.create({
-            data: {
-                email,
-                password: hashedPassword,
-            },
-        });
-        return user;
+        console.log('Starting user registration for:', email);
+        return yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
+            // First, check if there are any public channels
+            const publicChannels = yield tx.channel.findMany({
+                where: {
+                    type: "PUBLIC",
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    type: true
+                }
+            });
+            console.log('Available public channels:', publicChannels);
+            // Create user with explicit many-to-many relation
+            const user = yield tx.user.create({
+                data: {
+                    email,
+                    password: hashedPassword,
+                    name,
+                    channels: publicChannels.length > 0 ? {
+                        connect: publicChannels.map(channel => ({ id: channel.id }))
+                    } : undefined
+                },
+                include: {
+                    channels: true
+                }
+            });
+            // Verify the connection was made
+            const userWithChannels = yield tx.user.findUnique({
+                where: { id: user.id },
+                include: {
+                    channels: true
+                }
+            });
+            console.log('User channel memberships:', {
+                userId: user.id,
+                channelCount: userWithChannels === null || userWithChannels === void 0 ? void 0 : userWithChannels.channels.length,
+                channelIds: userWithChannels === null || userWithChannels === void 0 ? void 0 : userWithChannels.channels.map(c => c.id)
+            });
+            return userWithChannels !== null && userWithChannels !== void 0 ? userWithChannels : user;
+        }));
     });
 }
 function loginUser(email, password) {

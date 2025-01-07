@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { AxiosError } from "axios";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, UserPlus } from 'lucide-react';
+import { Mail, Lock, UserPlus, User } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
 import axiosInstance from "../lib/axios";
 
@@ -13,6 +13,7 @@ interface ErrorResponse {
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
@@ -46,6 +47,7 @@ export default function Register() {
       const res = await axiosInstance.post(API_CONFIG.ENDPOINTS.AUTH.REGISTER, {
         email,
         password,
+        name,
       });
       if (res.data.token) {
         localStorage.setItem("token", res.data.token);
@@ -70,7 +72,10 @@ export default function Register() {
         </div>
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <div
+            className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+            role="alert"
+          >
             <span className="block sm:inline">{error}</span>
           </div>
         )}
@@ -95,6 +100,26 @@ export default function Register() {
                   placeholder="Email address"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="full-name" className="sr-only">
+                Full Name
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="full-name"
+                  name="name"
+                  type="text"
+                  required
+                  className="appearance-none rounded-none relative block w-full px-3 py-2 pl-10 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  placeholder="Full Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                 />
               </div>
             </div>
@@ -174,4 +199,3 @@ export default function Register() {
     </div>
   );
 }
-
