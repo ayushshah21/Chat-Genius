@@ -1,10 +1,12 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { socket } from "../lib/socket";
 
 const Navbar: React.FC<{ userEmail: string }> = ({ userEmail }) => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
+    socket.emit("update_status", "offline");
     localStorage.removeItem("token");
     navigate("/login");
   };

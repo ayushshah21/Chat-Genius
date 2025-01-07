@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { io } from "../socket/socket.service";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
@@ -30,6 +31,7 @@ export async function registerUser(email: string, password: string, name: string
         email,
         password: hashedPassword,
         name,
+        status: 'online',
         channels: publicChannels.length > 0 ? {
           connect: publicChannels.map(channel => ({ id: channel.id }))
         } : undefined
@@ -39,21 +41,23 @@ export async function registerUser(email: string, password: string, name: string
       }
     });
 
-    // Verify the connection was made
-    const userWithChannels = await tx.user.findUnique({
-      where: { id: user.id },
-      include: {
-        channels: true
-      }
-    });
+    // Use the imported io instance to emit events
+    if (io) {
+      io.emit('user.new', {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        status: user.status
+      });
 
-    console.log('User channel memberships:', {
-      userId: user.id,
-      channelCount: userWithChannels?.channels.length,
-      channelIds: userWithChannels?.channels.map(c => c.id)
-    });
+      io.emit('user.status', {
+        id: user.id,
+        status: 'online'
+      });
+    }
 
-    return userWithChannels ?? user;
+    return user;
   });
 }
 

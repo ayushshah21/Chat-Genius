@@ -16,6 +16,7 @@ const socket_service_1 = require("../socket/socket.service");
 const prisma = new client_1.PrismaClient();
 function updateUserStatus(userId, status) {
     return __awaiter(this, void 0, void 0, function* () {
+        console.log(`[UserService] Updating status for user ${userId} to ${status}`);
         const user = yield prisma.user.update({
             where: { id: userId },
             data: { status },
@@ -27,6 +28,7 @@ function updateUserStatus(userId, status) {
                 status: true,
             }
         });
+        console.log(`[UserService] Broadcasting status update for user ${userId}:`, user);
         // Broadcast the status update to all connected clients
         socket_service_1.io.emit('user.status', user);
         return user;
@@ -34,7 +36,8 @@ function updateUserStatus(userId, status) {
 }
 function getUserById(userId) {
     return __awaiter(this, void 0, void 0, function* () {
-        return yield prisma.user.findUnique({
+        console.log(`[UserService] Fetching user ${userId}`);
+        const user = yield prisma.user.findUnique({
             where: { id: userId },
             select: {
                 id: true,
@@ -44,5 +47,7 @@ function getUserById(userId) {
                 status: true,
             }
         });
+        console.log(`[UserService] Found user:`, user);
+        return user;
     });
 }

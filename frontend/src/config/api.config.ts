@@ -25,6 +25,7 @@ export const API_CONFIG = {
         MESSAGES: {
             CREATE: '/api/messages',
             CHANNEL: '/api/messages/channel',
+            THREAD: '/api/messages/thread',
         },
         USERS: {
             AVAILABLE: '/api/users/available',

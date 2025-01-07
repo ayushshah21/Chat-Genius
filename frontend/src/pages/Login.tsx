@@ -2,8 +2,9 @@
 import React, { useEffect, useState } from "react";
 import axios, { AxiosError } from "axios";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, LogIn } from 'lucide-react';
+import { Mail, Lock, LogIn } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
+import { socket } from "../lib/socket";
 
 interface ErrorResponse {
   error: string;
@@ -32,10 +33,14 @@ export default function Login() {
           if (response.data.user) {
             navigate("/channels");
           } else {
+            // Clear token if invalid
             localStorage.removeItem("token");
+            localStorage.removeItem("userId");
           }
         } catch (err) {
+          // Clear token on error
           localStorage.removeItem("token");
+          localStorage.removeItem("userId");
         }
       }
     };
@@ -56,6 +61,12 @@ export default function Login() {
       );
       if (res.data.token) {
         localStorage.setItem("token", res.data.token);
+        if (res.data.userId) {
+          localStorage.setItem("userId", res.data.userId);
+          // Initialize socket with the new token
+          socket.auth = { token: res.data.token };
+          socket.connect();
+        }
         navigate("/channels");
       }
     } catch (err) {
@@ -77,7 +88,10 @@ export default function Login() {
         </div>
 
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <div
+            className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+            role="alert"
+          >
             <span className="block sm:inline">{error}</span>
           </div>
         )}

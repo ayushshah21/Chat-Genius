@@ -21,3 +21,13 @@ export async function createMessage(req: Request, res: Response) {
         res.status(400).json({ error: error.message });
     }
 }
+
+export async function getThreadMessages(req: Request, res: Response) {
+    const { messageId } = req.params;
+    try {
+        const messages = await messageService.getThreadMessages(messageId);
+        res.json(messages);
+    } catch (error: any) {
+        res.status(400).json({ error: error.message });
+    }
+}

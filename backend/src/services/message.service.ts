@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { io } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
@@ -8,16 +9,12 @@ export async function createMessage(
     userId: string,
     parentId?: string
 ) {
-    return await prisma.message.create({
+    const message = await prisma.message.create({
         data: {
             content,
-            channel: {
-                connect: { id: channelId }
-            },
-            user: {
-                connect: { id: userId }
-            },
-            ...(parentId ? { parent: { connect: { id: parentId } } } : {}),
+            channelId,
+            userId,
+            parentId
         },
         include: {
             user: {
@@ -26,17 +23,27 @@ export async function createMessage(
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
-        },
+            replies: true
+        }
     });
+
+    // Emit different events based on whether it's a reply or not
+    if (parentId) {
+        io.emit('new_reply', message);
+    } else {
+        io.to(channelId).emit('new_message', message);
+    }
+
+    return message;
 }
 
-export async function getChannelMessages(channelId: string, limit = 50) {
+export async function getChannelMessages(channelId: string) {
     return await prisma.message.findMany({
         where: {
             channelId,
-            parentId: null,
+            parentId: null // Only get top-level messages
         },
         include: {
             user: {
@@ -45,17 +52,44 @@ export async function getChannelMessages(channelId: string, limit = 50) {
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
             replies: {
                 include: {
-                    user: true,
-                },
-            },
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    }
+                }
+            }
         },
         orderBy: {
-            createdAt: "asc",
+            createdAt: 'asc'
+        }
+    });
+}
+
+export async function getThreadMessages(messageId: string) {
+    return await prisma.message.findMany({
+        where: {
+            parentId: messageId
         },
-        take: limit,
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'asc'
+        }
     });
 } 

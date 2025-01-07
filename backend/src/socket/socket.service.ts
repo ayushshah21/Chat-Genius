@@ -6,10 +6,15 @@ import * as userService from '../services/user.service';
 
 const prisma = new PrismaClient();
 
+// Keep track of disconnect timeouts and connected users
+const disconnectTimeouts: Record<string, NodeJS.Timeout> = {};
+const connectedUsers: Set<string> = new Set();
+const OFFLINE_TIMEOUT = 10000; // 10 seconds
+
 export let io: Server;
 
 export function setupSocketIO(server: Server) {
-    io = server;  // Assign the server instance
+    io = server;
 
     io.on('connection', async (socket) => {
         console.log('Socket connected:', socket.id);
@@ -19,13 +24,27 @@ export function setupSocketIO(server: Server) {
             const token = socket.handshake.auth.token;
             if (token) {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
-                await userService.updateUserStatus(decoded.userId, 'online');
+                console.log(`[Presence] User ${decoded.userId} connected with socket ${socket.id}`);
 
-                // Store userId in socket for disconnection handling
+                // Clear any existing disconnect timeout for this user
+                if (disconnectTimeouts[decoded.userId]) {
+                    console.log(`[Presence] Clearing disconnect timeout for user ${decoded.userId}`);
+                    clearTimeout(disconnectTimeouts[decoded.userId]);
+                    delete disconnectTimeouts[decoded.userId];
+                }
+
+                // Only update status if user wasn't already connected
+                if (!connectedUsers.has(decoded.userId)) {
+                    await userService.updateUserStatus(decoded.userId, 'online');
+                }
+
+                connectedUsers.add(decoded.userId);
+                console.log(`[Presence] Connected users:`, Array.from(connectedUsers));
+
                 socket.data.userId = decoded.userId;
             }
         } catch (error) {
-            console.error('Error handling user presence:', error);
+            console.error('[Presence] Error handling user presence:', error);
         }
 
         // Join a channel
@@ -87,15 +106,46 @@ export function setupSocketIO(server: Server) {
             socket.to(data.channelId).emit('user_stop_typing', { userId: data.userId });
         });
 
+        // Handle explicit logout
+        socket.on('logout', async () => {
+            if (socket.data.userId) {
+                console.log(`[Presence] User ${socket.data.userId} logged out`);
+                // Clear any existing timeout
+                if (disconnectTimeouts[socket.data.userId]) {
+                    clearTimeout(disconnectTimeouts[socket.data.userId]);
+                    delete disconnectTimeouts[socket.data.userId];
+                }
+                // Force offline status immediately
+                await userService.updateUserStatus(socket.data.userId, 'offline');
+                connectedUsers.delete(socket.data.userId);
+                console.log(`[Presence] Updated connected users after logout:`, Array.from(connectedUsers));
+            }
+        });
+
         // Handle user presence on disconnection
         socket.on('disconnect', async () => {
-            console.log('Socket disconnected:', socket.id);
+            console.log(`[Presence] Socket ${socket.id} disconnected`);
             if (socket.data.userId) {
-                try {
-                    await userService.updateUserStatus(socket.data.userId, 'offline');
-                } catch (error) {
-                    console.error('Error updating user status on disconnect:', error);
-                }
+                console.log(`[Presence] Starting disconnect timeout for user ${socket.data.userId}`);
+
+                // Set a timeout before marking the user as offline
+                disconnectTimeouts[socket.data.userId] = setTimeout(async () => {
+                    try {
+                        // Check if the user has another active connection
+                        if (!connectedUsers.has(socket.data.userId)) {
+                            console.log(`[Presence] Marking user ${socket.data.userId} as offline`);
+                            await userService.updateUserStatus(socket.data.userId, 'offline');
+                        } else {
+                            console.log(`[Presence] User ${socket.data.userId} still has active connections`);
+                        }
+                        delete disconnectTimeouts[socket.data.userId];
+                    } catch (error) {
+                        console.error('[Presence] Error updating user status on disconnect:', error);
+                    }
+                }, OFFLINE_TIMEOUT);
+
+                connectedUsers.delete(socket.data.userId);
+                console.log(`[Presence] Updated connected users:`, Array.from(connectedUsers));
             }
         });
 

@@ -18,6 +18,7 @@ exports.generateJWTforGoogleUser = generateJWTforGoogleUser;
 const client_1 = require("@prisma/client");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const socket_service_1 = require("../socket/socket.service");
 const prisma = new client_1.PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 function registerUser(email, password, name) {
@@ -43,6 +44,7 @@ function registerUser(email, password, name) {
                     email,
                     password: hashedPassword,
                     name,
+                    status: 'online',
                     channels: publicChannels.length > 0 ? {
                         connect: publicChannels.map(channel => ({ id: channel.id }))
                     } : undefined
@@ -51,19 +53,21 @@ function registerUser(email, password, name) {
                     channels: true
                 }
             });
-            // Verify the connection was made
-            const userWithChannels = yield tx.user.findUnique({
-                where: { id: user.id },
-                include: {
-                    channels: true
-                }
-            });
-            console.log('User channel memberships:', {
-                userId: user.id,
-                channelCount: userWithChannels === null || userWithChannels === void 0 ? void 0 : userWithChannels.channels.length,
-                channelIds: userWithChannels === null || userWithChannels === void 0 ? void 0 : userWithChannels.channels.map(c => c.id)
-            });
-            return userWithChannels !== null && userWithChannels !== void 0 ? userWithChannels : user;
+            // Use the imported io instance to emit events
+            if (socket_service_1.io) {
+                socket_service_1.io.emit('user.new', {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    avatarUrl: user.avatarUrl,
+                    status: user.status
+                });
+                socket_service_1.io.emit('user.status', {
+                    id: user.id,
+                    status: 'online'
+                });
+            }
+            return user;
         }));
     });
 }

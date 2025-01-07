@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Database, Layout, Terminal, MessageSquare, Users, Shield } from 'lucide-react';
+import {
+  ArrowRight,
+  Database,
+  Layout,
+  Terminal,
+  MessageSquare,
+  Users,
+  Shield,
+} from "lucide-react";
 import axiosInstance from "../lib/axios";
 import { API_CONFIG } from "../config/api.config";
+import { socket } from "../lib/socket";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -14,6 +23,9 @@ export default function Home() {
     const token = searchParams.get("token");
     if (token) {
       localStorage.setItem("token", token);
+      // Initialize socket with the new token from OAuth
+      socket.auth = { token };
+      socket.connect();
       navigate("/channels");
       return;
     }
@@ -42,14 +54,23 @@ export default function Home() {
 
   const handleLogout = async () => {
     try {
+      // Emit logout event before clearing data
+      socket.emit("logout");
+
       await axiosInstance.get(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
       localStorage.removeItem("token");
+      localStorage.removeItem("userId");
       setIsAuthenticated(false);
       setUserEmail("");
+      navigate("/login");
     } catch (err) {
       console.error("Logout failed:", err);
+      // Still clear local data even if server logout fails
       localStorage.removeItem("token");
+      localStorage.removeItem("userId");
       setIsAuthenticated(false);
+      setUserEmail("");
+      navigate("/login");
     }
   };
 
@@ -114,7 +135,9 @@ export default function Home() {
                 </span>
               </h1>
               <p className="mt-6 text-xl text-gray-500 max-w-3xl">
-                Experience the future of communication with ChatGenius. Our AI-powered platform offers seamless, intelligent conversations for both personal and business use.
+                Experience the future of communication with ChatGenius. Our
+                AI-powered platform offers seamless, intelligent conversations
+                for both personal and business use.
               </p>
               <div className="mt-10">
                 <Link
@@ -141,7 +164,8 @@ export default function Home() {
               Everything you need for smart communication
             </p>
             <p className="mt-4 max-w-2xl text-xl text-gray-500 lg:mx-auto">
-              ChatGenius combines cutting-edge AI with user-friendly design to revolutionize your chat experience.
+              ChatGenius combines cutting-edge AI with user-friendly design to
+              revolutionize your chat experience.
             </p>
           </div>
 
@@ -175,7 +199,8 @@ export default function Home() {
               <span className="block mt-2">Start chatting with AI today.</span>
             </h2>
             <p className="mt-4 text-xl leading-6 text-blue-100">
-              Join thousands of users already revolutionizing their communication with ChatGenius.
+              Join thousands of users already revolutionizing their
+              communication with ChatGenius.
             </p>
             <div className="mt-10">
               <Link
@@ -202,28 +227,32 @@ const features = [
   },
   {
     name: "Real-time Collaboration",
-    description: "Seamlessly work together with multiple users in real-time chat rooms.",
+    description:
+      "Seamlessly work together with multiple users in real-time chat rooms.",
     icon: <Users className="w-6 h-6 text-blue-600" />,
   },
   {
     name: "Secure Communication",
-    description: "Your conversations are protected with end-to-end encryption and advanced security measures.",
+    description:
+      "Your conversations are protected with end-to-end encryption and advanced security measures.",
     icon: <Shield className="w-6 h-6 text-blue-600" />,
   },
   {
     name: "Smart Integrations",
-    description: "Connect with your favorite tools and services for enhanced productivity.",
+    description:
+      "Connect with your favorite tools and services for enhanced productivity.",
     icon: <Layout className="w-6 h-6 text-blue-600" />,
   },
   {
     name: "Customizable Experience",
-    description: "Tailor the chat interface and AI responses to suit your preferences and needs.",
+    description:
+      "Tailor the chat interface and AI responses to suit your preferences and needs.",
     icon: <Terminal className="w-6 h-6 text-blue-600" />,
   },
   {
     name: "Analytics and Insights",
-    description: "Gain valuable insights from your conversations with advanced analytics tools.",
+    description:
+      "Gain valuable insights from your conversations with advanced analytics tools.",
     icon: <Database className="w-6 h-6 text-blue-600" />,
   },
 ];
-

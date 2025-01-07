@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User } from "../types/user";
 import { socket } from "../lib/socket";
+import axiosInstance from "../lib/axios";
+import { API_CONFIG } from "../config/api.config";
 
 interface UserStatusContextType {
   userStatuses: Record<string, string>;
@@ -19,8 +21,28 @@ export function UserStatusProvider({
   const [userStatuses, setUserStatuses] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    // Fetch initial user statuses
+    const fetchInitialStatuses = async () => {
+      try {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+        );
+        const users = response.data;
+        const initialStatuses: Record<string, string> = {};
+        users.forEach((user: User) => {
+          initialStatuses[user.id] = user.status;
+        });
+        setUserStatuses(initialStatuses);
+      } catch (error) {
+        console.error("Failed to fetch initial user statuses:", error);
+      }
+    };
+
+    fetchInitialStatuses();
+
     // Listen for user status updates
     socket.on("user.status", (user: User) => {
+      console.log("[UserStatusContext] Received status update:", user);
       setUserStatuses((prev) => ({
         ...prev,
         [user.id]: user.status,

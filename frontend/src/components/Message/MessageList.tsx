@@ -5,6 +5,8 @@ import { DirectMessage } from "../../types/directMessage";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { socket } from "../../lib/socket";
+import ThreadPanel from "./ThreadPanel";
+import { MessageCircle } from "lucide-react";
 
 interface Props {
   channelId?: string | null;
@@ -14,6 +16,7 @@ interface Props {
 export default function MessageList({ channelId, dmUserId }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -34,10 +37,8 @@ export default function MessageList({ channelId, dmUserId }: Props) {
           );
           setMessages(response.data);
         } else if (dmUserId) {
-          // Join DM room for current user
-          const currentUserId = localStorage.getItem("userId"); // You'll need to store this on login
+          const currentUserId = localStorage.getItem("userId");
           socket.emit("join_dm", currentUserId);
-          // Join DM room for the other user
           socket.emit("join_dm", dmUserId);
 
           const response = await axiosInstance.get(
@@ -70,12 +71,24 @@ export default function MessageList({ channelId, dmUserId }: Props) {
       setMessages((prev) => [...prev, message]);
     };
 
+    const replyHandler = (reply: Message) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === reply.parentId
+            ? { ...msg, replies: [...(msg.replies || []), reply] }
+            : msg
+        )
+      );
+    };
+
     socket.on("new_message", messageHandler);
-    socket.on("new_dm", messageHandler); // Add DM handler
+    socket.on("new_dm", messageHandler);
+    socket.on("new_reply", replyHandler);
 
     return () => {
       socket.off("new_message", messageHandler);
       socket.off("new_dm", messageHandler);
+      socket.off("new_reply", replyHandler);
     };
   }, []);
 
@@ -96,19 +109,35 @@ export default function MessageList({ channelId, dmUserId }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 h-full">
+    <div className="flex-1 overflow-y-auto p-4 h-full relative">
       <div className="flex flex-col space-y-4 min-h-0">
         {messages.map((message) => (
-          <MessageItem key={message.id} message={message} />
+          <MessageItem
+            key={message.id}
+            message={message}
+            onThreadClick={() => setSelectedThread(message)}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>
+      {selectedThread && (
+        <ThreadPanel
+          parentMessage={selectedThread}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
     </div>
   );
 }
 
-function MessageItem({ message }: { message: Message | DirectMessage }) {
+interface MessageItemProps {
+  message: Message | DirectMessage;
+  onThreadClick: () => void;
+}
+
+function MessageItem({ message, onThreadClick }: MessageItemProps) {
   const userInfo = "user" in message ? message.user : message.sender;
+  const replyCount = "replies" in message ? message.replies?.length || 0 : 0;
 
   if (!userInfo) return null;
 
@@ -134,6 +163,19 @@ function MessageItem({ message }: { message: Message | DirectMessage }) {
           </span>
         </div>
         <p className="text-gray-800 break-words">{message.content}</p>
+        <div className="mt-1 flex items-center space-x-2">
+          <button
+            onClick={onThreadClick}
+            className="text-xs text-gray-500 hover:text-blue-600 flex items-center space-x-1"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>
+              {replyCount > 0
+                ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
+                : "Reply in thread"}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );
