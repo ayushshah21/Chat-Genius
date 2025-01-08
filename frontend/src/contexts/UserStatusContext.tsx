@@ -43,17 +43,17 @@ export function UserStatusProvider({
           // Initialize socket only if not already connected
           if (!socket.connected) {
             initSocket(token);
-            // Fetch initial user statuses
-            const statusResponse = await axiosInstance.get(
-              API_CONFIG.ENDPOINTS.USERS.AVAILABLE
-            );
-            const users = statusResponse.data;
-            const initialStatuses: Record<string, string> = {};
-            users.forEach((user: User) => {
-              initialStatuses[user.id] = user.status;
-            });
-            setUserStatuses(initialStatuses);
           }
+          // Fetch initial user statuses
+          const statusResponse = await axiosInstance.get(
+            API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+          );
+          const users = statusResponse.data;
+          const initialStatuses: Record<string, string> = {};
+          users.forEach((user: User) => {
+            initialStatuses[user.id] = user.status;
+          });
+          setUserStatuses(initialStatuses);
         } else {
           setIsAuthenticated(false);
           localStorage.clear();
@@ -83,7 +83,7 @@ export function UserStatusProvider({
     return () => {
       socket.off("user.status", handleStatusUpdate);
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const updateUserStatus = (userId: string, status: string) => {
     if (socket.connected) {

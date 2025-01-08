@@ -6,6 +6,7 @@ import { Mail, Lock, LogIn } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
 import axiosInstance from "../lib/axios";
 import { useUserStatus } from "../contexts/UserStatusContext";
+import { initSocket } from "../lib/socket";
 
 interface ErrorResponse {
   error: string;
@@ -15,34 +16,38 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { setIsAuthenticated } = useUserStatus();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    try {
-      const res = await axiosInstance.post(API_CONFIG.ENDPOINTS.AUTH.LOGIN, {
-        email,
-        password,
-      });
+    if (loading) return;
 
-      if (res.data.token) {
-        localStorage.setItem("token", res.data.token);
-        if (res.data.user) {
-          localStorage.setItem("userId", res.data.user.id);
-          localStorage.setItem("userName", res.data.user.name || "");
-          localStorage.setItem("userEmail", res.data.user.email);
-          localStorage.setItem("userAvatar", res.data.user.avatarUrl || "");
-          localStorage.setItem("userStatus", res.data.user.status);
+    setLoading(true);
+    try {
+      const response = await axiosInstance.post(
+        API_CONFIG.ENDPOINTS.AUTH.LOGIN,
+        {
+          email,
+          password,
         }
-        setIsAuthenticated(true);
-        navigate("/channels");
-      }
-    } catch (err) {
-      console.error("Login error:", err);
-      const error = err as AxiosError<ErrorResponse>;
-      setError(error.response?.data.error || "Error logging in");
+      );
+
+      const { token, user } = response.data;
+      localStorage.setItem("token", token);
+      localStorage.setItem("userId", user.id);
+
+      // Initialize socket with the new token
+      initSocket(token);
+
+      setIsAuthenticated(true);
+      navigate("/channels");
+    } catch (error) {
+      console.error("Login failed:", error);
+      setError("Invalid email or password");
+    } finally {
+      setLoading(false);
     }
   };
 

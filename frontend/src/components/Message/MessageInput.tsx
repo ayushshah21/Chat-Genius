@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { Send } from "lucide-react";
 import { socket } from "../../lib/socket";
-import axiosInstance from "../../lib/axios";
-import { API_CONFIG } from "../../config/api.config";
 
 interface Props {
   channelId?: string | null;
@@ -32,39 +30,19 @@ export default function MessageInput({
     setSending(true);
     try {
       if (channelId) {
-        // Send message through API first
-        const response = await axiosInstance.post(
-          API_CONFIG.ENDPOINTS.MESSAGES.CREATE,
-          {
-            content: message,
-            channelId,
-            parentId,
-          }
-        );
-
-        // Then emit socket event with the created message
-        if (parentId) {
-          socket.emit("new_reply", response.data);
-        } else {
-          socket.emit("new_message", response.data);
-        }
+        // Send message through socket
+        socket.emit("send_message", {
+          content: message,
+          channelId,
+          parentId,
+        });
       } else if (dmUserId) {
-        // Send DM through API first
-        const response = await axiosInstance.post(
-          API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.CREATE,
-          {
-            content: message,
-            receiverId: dmUserId,
-            parentId,
-          }
-        );
-
-        // Then emit socket event with the created message
-        if (parentId) {
-          socket.emit("new_reply", response.data);
-        } else {
-          socket.emit("new_dm", response.data);
-        }
+        // Send DM through socket
+        socket.emit("send_dm", {
+          content: message,
+          receiverId: dmUserId,
+          parentId,
+        });
       }
 
       setMessage("");
