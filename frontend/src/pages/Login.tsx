@@ -1,6 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState } from "react";
-import { AxiosError } from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, LogIn } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
@@ -8,9 +6,6 @@ import axiosInstance from "../lib/axios";
 import { useUserStatus } from "../contexts/UserStatusContext";
 import { initSocket } from "../lib/socket";
 
-interface ErrorResponse {
-  error: string;
-}
 
 export default function Login() {
   const [email, setEmail] = useState("");
