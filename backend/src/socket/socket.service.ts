@@ -64,7 +64,7 @@ export function setupSocketIO(server: Server) {
 
         // New message
         socket.on('send_message', async (data: {
-            content: string;
+            content: string | null;
             channelId: string;
             parentId?: string;
         }) => {
@@ -90,7 +90,11 @@ export function setupSocketIO(server: Server) {
                 );
 
                 // Broadcast to all clients in the channel, including sender
-                io.to(data.channelId).emit('new_message', message);
+                if (data.parentId) {
+                    io.emit('new_reply', message);
+                } else {
+                    io.to(data.channelId).emit('new_message', message);
+                }
             } catch (error) {
                 console.error('Error sending message:', error);
                 socket.emit('message_error', { error: 'Failed to send message' });
@@ -242,6 +246,49 @@ export function setupSocketIO(server: Server) {
             } catch (error) {
                 console.error('Error sending DM:', error);
                 socket.emit('message_error', { error: 'Failed to send message' });
+            }
+        });
+
+        // Handle file upload notification
+        socket.on('file_upload_complete', async (data: {
+            messageId: string,
+            fileId: string,
+            size: number
+        }) => {
+            try {
+                // Update file size
+                await prisma.file.update({
+                    where: { id: data.fileId },
+                    data: { size: data.size }
+                });
+
+                // Get updated message with file info
+                const message = await prisma.message.findUnique({
+                    where: { id: data.messageId },
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        },
+                        files: true
+                    }
+                });
+
+                if (message) {
+                    if (message.parentId) {
+                        // If it's a thread message
+                        io.emit('new_reply', message);
+                    } else {
+                        // If it's a channel message
+                        io.to(message.channelId).emit('new_message', message);
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling file upload complete:', error);
             }
         });
     });

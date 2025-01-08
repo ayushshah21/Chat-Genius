@@ -1,20 +1,26 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Message } from '@prisma/client';
 import { io } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
 export async function createMessage(
-    content: string,
+    content: string | null,
     channelId: string,
     userId: string,
-    parentId?: string
+    parentId?: string,
+    fileIds?: string[]
 ) {
     const message = await prisma.message.create({
         data: {
             content,
             channelId,
             userId,
-            parentId
+            parentId,
+            ...(fileIds && {
+                files: {
+                    connect: fileIds.map(id => ({ id }))
+                }
+            })
         },
         include: {
             user: {
@@ -22,19 +28,17 @@ export async function createMessage(
                     id: true,
                     name: true,
                     email: true,
-                    avatarUrl: true,
+                    avatarUrl: true
                 }
             },
-            replies: true
+            files: true,
+            _count: {
+                select: {
+                    replies: true
+                }
+            }
         }
     });
-
-    // Emit different events based on whether it's a reply or not
-    if (parentId) {
-        io.emit('new_reply', message);
-    } else {
-        io.to(channelId).emit('new_message', message);
-    }
 
     return message;
 }
@@ -51,32 +55,27 @@ export async function getChannelMessages(channelId: string) {
                     id: true,
                     name: true,
                     email: true,
-                    avatarUrl: true,
+                    avatarUrl: true
                 }
             },
-            replies: {
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true,
-                        }
-                    }
+            files: true,
+            _count: {
+                select: {
+                    replies: true
                 }
             }
         },
         orderBy: {
             createdAt: 'asc'
-        }
+        },
+        take: 50
     });
 }
 
-export async function getThreadMessages(messageId: string) {
+export async function getThreadMessages(parentId: string) {
     return await prisma.message.findMany({
         where: {
-            parentId: messageId
+            parentId
         },
         include: {
             user: {
@@ -84,9 +83,10 @@ export async function getThreadMessages(messageId: string) {
                     id: true,
                     name: true,
                     email: true,
-                    avatarUrl: true,
+                    avatarUrl: true
                 }
-            }
+            },
+            files: true
         },
         orderBy: {
             createdAt: 'asc'
