@@ -3,6 +3,7 @@ export interface DirectMessage {
     content: string;
     senderId: string;
     receiverId: string;
+    parentId?: string;
     createdAt: string;
     sender: {
         id: string;
@@ -16,4 +17,5 @@ export interface DirectMessage {
         email: string;
         avatarUrl: string | null;
     };
+    replies?: DirectMessage[];
 } 

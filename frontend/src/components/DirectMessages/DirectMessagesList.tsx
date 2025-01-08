@@ -4,6 +4,7 @@ import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { UserCircle } from "lucide-react";
 import { useUserStatus } from "../../contexts/UserStatusContext";
+import { useNavigate } from "react-router-dom";
 
 interface Props {
   onUserSelect?: (userId: string) => void;
@@ -17,18 +18,17 @@ export default function DirectMessagesList({
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const { userStatuses } = useUserStatus();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchUsers = async () => {
-      console.log("DirectMessagesList: Fetching available users");
       try {
         const response = await axiosInstance.get(
           API_CONFIG.ENDPOINTS.USERS.AVAILABLE
         );
-        console.log("DirectMessagesList: Received users:", response.data);
         setUsers(response.data);
       } catch (error) {
-        console.error("DirectMessagesList: Failed to fetch users:", error);
+        console.error("Failed to fetch users:", error);
       } finally {
         setLoading(false);
       }
@@ -37,17 +37,12 @@ export default function DirectMessagesList({
     fetchUsers();
   }, []);
 
-  const handleUserClick = async (userId: string, userName: string | null) => {
+  const handleUserClick = async (userId: string, userName: string) => {
     console.log("DirectMessagesList: User clicked:", { userId, userName });
+
     try {
-      console.log("DirectMessagesList: Creating/getting DM channel");
-      const response = await axiosInstance.post(
-        API_CONFIG.ENDPOINTS.CHANNELS.CREATE_DM,
-        {
-          otherUserId: userId,
-        }
-      );
-      console.log("DirectMessagesList: DM channel response:", response.data);
+      // Navigate to DM chat with this user
+      navigate(`/messages/${userId}`);
       onUserSelect?.(userId);
     } catch (error) {
       console.error("DirectMessagesList: Failed to handle DM:", error);

@@ -49,10 +49,22 @@ export default function MessageInput({
           socket.emit("new_message", response.data);
         }
       } else if (dmUserId) {
-        socket.emit("send_dm", {
-          content: message,
-          receiverId: dmUserId,
-        });
+        // Send DM through API first
+        const response = await axiosInstance.post(
+          API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.CREATE,
+          {
+            content: message,
+            receiverId: dmUserId,
+            parentId,
+          }
+        );
+
+        // Then emit socket event with the created message
+        if (parentId) {
+          socket.emit("new_reply", response.data);
+        } else {
+          socket.emit("new_dm", response.data);
+        }
       }
 
       setMessage("");
@@ -72,13 +84,13 @@ export default function MessageInput({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow duration-200"
+          className="flex-1 px-4 py-2 bg-[#222529] text-white border border-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-shadow duration-200"
           disabled={sending}
         />
         <button
           type="submit"
           disabled={sending || !message.trim()}
-          className="p-2 text-white bg-blue-600 rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 relative z-10"
+          className="p-2 text-white bg-[#007a5a] rounded-full hover:bg-[#148567] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
           <Send className="w-5 h-5" />
         </button>

@@ -47,7 +47,6 @@ exports.getUserChannels = getUserChannels;
 exports.getChannelById = getChannelById;
 exports.joinChannel = joinChannel;
 exports.leaveChannel = leaveChannel;
-exports.createDMChannel = createDMChannel;
 const channelService = __importStar(require("../services/channel.service"));
 function createChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -131,22 +130,6 @@ function leaveChannel(req, res) {
             res.json({ message: "Successfully left channel" });
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
-        }
-    });
-}
-function createDMChannel(req, res) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const { otherUserId } = req.body;
-        const userId = req.userId;
-        console.log("Channel Controller: Creating DM channel", { userId, otherUserId });
-        try {
-            const channel = yield channelService.createDMChannel(userId, otherUserId);
-            console.log("Channel Controller: DM channel created:", channel);
-            res.json(channel);
-        }
-        catch (error) {
-            console.error("Channel Controller: Failed to create DM channel:", error);
             res.status(400).json({ error: error.message });
         }
     });

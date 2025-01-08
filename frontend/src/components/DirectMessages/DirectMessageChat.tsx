@@ -10,6 +10,7 @@ export default function DirectMessageChat() {
   const { userId } = useParams();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const currentUserId = localStorage.getItem("userId");
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -29,31 +30,25 @@ export default function DirectMessageChat() {
 
     fetchMessages();
 
+    // Join the DM room
+    socket.emit("join_dm", userId);
+
     // Listen for new DMs
-    socket.on("new_dm", (message: DirectMessage) => {
-      if (!userId) return;
+    const handleNewDM = (message: DirectMessage) => {
       if (message.senderId === userId || message.receiverId === userId) {
         setMessages((prev) => [...prev, message]);
       }
-    });
+    };
+
+    socket.on("new_dm", handleNewDM);
 
     return () => {
-      socket.off("new_dm");
+      socket.emit("leave_dm", userId);
+      socket.off("new_dm", handleNewDM);
     };
-  }, [userId]);
+  }, [userId, currentUserId]);
 
   if (!userId) return null;
-
-  const handleSendMessage = async (content: string) => {
-    try {
-      await axiosInstance.post(API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.CREATE, {
-        content,
-        receiverId: userId,
-      });
-    } catch (error) {
-      console.error("Failed to send DM:", error);
-    }
-  };
 
   if (loading) {
     return <div>Loading messages...</div>;
@@ -66,17 +61,37 @@ export default function DirectMessageChat() {
           <div
             key={message.id}
             className={`flex ${
-              message.senderId === userId ? "justify-start" : "justify-end"
+              message.senderId === currentUserId
+                ? "justify-end"
+                : "justify-start"
             }`}
           >
             <div className="max-w-[70%] bg-white rounded-lg shadow p-3">
-              <p className="text-sm text-gray-700">{message.content}</p>
+              <div className="flex items-center space-x-2 mb-1">
+                <img
+                  src={
+                    message.sender.avatarUrl ||
+                    `https://ui-avatars.com/api/?name=${
+                      message.sender.name || "User"
+                    }`
+                  }
+                  alt={message.sender.name || "User"}
+                  className="w-6 h-6 rounded-full"
+                />
+                <span className="text-sm font-medium">
+                  {message.sender.name || message.sender.email}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {new Date(message.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <p className="text-sm text-gray-800">{message.content}</p>
             </div>
           </div>
         ))}
       </div>
       <div className="p-4 border-t">
-        <MessageInput onSend={handleSendMessage} />
+        <MessageInput dmUserId={userId} placeholder="Type a message..." />
       </div>
     </div>
   );

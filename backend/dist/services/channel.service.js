@@ -14,7 +14,6 @@ exports.getChannelById = getChannelById;
 exports.getUserChannels = getUserChannels;
 exports.addMemberToChannel = addMemberToChannel;
 exports.removeMemberFromChannel = removeMemberFromChannel;
-exports.createDMChannel = createDMChannel;
 exports.getAvailableUsers = getAvailableUsers;
 const client_1 = require("@prisma/client");
 const socket_service_1 = require("../socket/socket.service");
@@ -124,62 +123,6 @@ function removeMemberFromChannel(channelId, userId) {
                 }
             }
         });
-    });
-}
-function createDMChannel(userId, otherUserId) {
-    return __awaiter(this, void 0, void 0, function* () {
-        console.log("Channel Service: Creating DM channel", { userId, otherUserId });
-        // First check if DM channel already exists between these users
-        const existingDM = yield prisma.channel.findFirst({
-            where: {
-                type: "DM",
-                AND: [
-                    { members: { some: { id: userId } } },
-                    { members: { some: { id: otherUserId } } }
-                ]
-            },
-            include: {
-                members: {
-                    select: {
-                        id: true,
-                        name: true,
-                        avatarUrl: true
-                    }
-                }
-            }
-        });
-        if (existingDM) {
-            console.log("Channel Service: Found existing DM channel:", existingDM);
-            return existingDM;
-        }
-        console.log("Channel Service: No existing DM channel found, creating new one");
-        // Create new DM channel
-        const channel = yield prisma.channel.create({
-            data: {
-                name: "dm", // Will be overridden in UI with user names
-                type: "DM",
-                createdBy: userId,
-                isPrivate: true,
-                members: {
-                    connect: [
-                        { id: userId },
-                        { id: otherUserId }
-                    ]
-                }
-            },
-            include: {
-                members: {
-                    select: {
-                        id: true,
-                        name: true,
-                        avatarUrl: true
-                    }
-                }
-            }
-        });
-        console.log("Channel Service: Created new DM channel:", channel);
-        socket_service_1.io.emit('new_channel', channel);
-        return channel;
     });
 }
 // Add this to get all available users for DMs

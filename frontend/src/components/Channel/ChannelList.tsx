@@ -1,104 +1,118 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { Channel } from "../../types/channel";
-import { Plus, Hash, Lock } from "lucide-react";
-import DirectMessagesList from "../DirectMessages/DirectMessagesList";
+import { User } from "../../types/user";
+import { Plus, Hash } from "lucide-react";
+import CreateChannelModal from "./CreateChannelModal";
+import { Link } from "react-router-dom";
+import { useUserStatus } from "../../contexts/UserStatusContext";
+import axiosInstance from "../../lib/axios";
+import { API_CONFIG } from "../../config/api.config";
 
 interface Props {
   channels: Channel[];
-  onCreateChannel: () => void;
-  onChannelSelect: (channelId: string) => void;
-  selectedChannelId: string | null;
-  onDirectMessageSelect: (userId: string) => void;
-  selectedDMUserId: string | null;
+  selectedChannelId?: string | null;
+  selectedUserId?: string | null;
 }
 
 export default function ChannelList({
   channels,
-  onCreateChannel,
-  onChannelSelect,
   selectedChannelId,
-  onDirectMessageSelect,
+  selectedUserId,
 }: Props) {
-  const [loading, setLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const { userStatuses } = useUserStatus();
 
   useEffect(() => {
-    setLoading(false);
-  }, [channels]);
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+        );
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+      }
+    };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-  console.log("ChannelList: Rendering with channels:", channels);
+    fetchUsers();
+  }, []);
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-800">Channels</h2>
+    <div className="h-full bg-[#19171D] text-gray-100">
+      <div className="p-4 border-b border-gray-700 bg-[#19171D]">
+        <h2 className="text-lg font-semibold mb-4 text-white">Channels</h2>
         <button
-          onClick={onCreateChannel}
-          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors duration-200"
+          onClick={() => setIsCreateModalOpen(true)}
+          className="w-full px-4 py-2 text-white bg-[#007a5a] rounded hover:bg-[#148567] transition-colors duration-200 flex items-center justify-center space-x-2"
         >
           <Plus className="w-5 h-5" />
+          <span>Create Channel</span>
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <div className="mb-4">
-          {channels.map((channel) => (
-            <ChannelItem
-              key={channel.id}
-              channel={channel}
-              isSelected={channel.id === selectedChannelId}
-              onSelect={onChannelSelect}
-            />
+
+      <div className="p-2 space-y-1">
+        {channels.map((channel) => (
+          <Link
+            key={channel.id}
+            to={`/channels/${channel.id}`}
+            className={`flex items-center px-3 py-1.5 rounded hover:bg-[#222529] transition-colors duration-200 ${
+              selectedChannelId === channel.id
+                ? "bg-[#1164A3] text-white"
+                : "text-gray-300"
+            }`}
+          >
+            <Hash className="w-4 h-4 mr-2 flex-shrink-0" />
+            <span className="truncate">{channel.name}</span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="p-4 border-t border-gray-700">
+        <h2 className="text-lg font-semibold mb-4 text-white">
+          Direct Messages
+        </h2>
+        <div className="space-y-1">
+          {users.map((user) => (
+            <Link
+              key={user.id}
+              to={`/dm/${user.id}`}
+              className={`flex items-center px-3 py-1.5 rounded hover:bg-[#222529] transition-colors duration-200 ${
+                selectedUserId === user.id
+                  ? "bg-[#1164A3] text-white"
+                  : "text-gray-300"
+              }`}
+            >
+              <div className="relative flex-shrink-0">
+                <img
+                  src={
+                    user.avatarUrl ||
+                    `https://ui-avatars.com/api/?name=${
+                      user.name || "User"
+                    }&background=random`
+                  }
+                  alt={user.name || "User"}
+                  className="w-6 h-6 rounded-full"
+                />
+                <div
+                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#19171D] ${
+                    userStatuses[user.id] === "online"
+                      ? "bg-green-500"
+                      : "bg-gray-500"
+                  }`}
+                />
+              </div>
+              <span className="ml-2 truncate">{user.name || user.email}</span>
+            </Link>
           ))}
         </div>
-
-        <DirectMessagesList
-          onUserSelect={(userId) => {
-            console.log(
-              "ChannelList: Forwarding DM user selection to parent:",
-              userId
-            );
-            onDirectMessageSelect(userId);
-          }}
-        />
       </div>
-    </div>
-  );
-}
 
-function ChannelItem({
-  channel,
-  isSelected,
-  onSelect,
-}: {
-  channel: Channel;
-  isSelected: boolean;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div
-      onClick={() => onSelect(channel.id)}
-      className={`flex items-center px-4 py-2 cursor-pointer group transition-colors duration-200 ${
-        isSelected
-          ? "bg-blue-100 text-blue-800"
-          : "hover:bg-gray-100 text-gray-700"
-      }`}
-    >
-      {channel.type === "PRIVATE" ? (
-        <Lock className="w-4 h-4 mr-2 text-gray-400" />
-      ) : (
-        <Hash className="w-4 h-4 mr-2 text-gray-400" />
-      )}
-      <span className="flex-1 truncate">{channel.name}</span>
-      {channel._count && (
-        <span className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          {channel._count.messages}
-        </span>
-      )}
+      <CreateChannelModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onChannelCreated={() => setIsCreateModalOpen(false)}
+      />
     </div>
   );
 }

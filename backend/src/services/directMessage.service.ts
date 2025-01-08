@@ -6,13 +6,15 @@ const prisma = new PrismaClient();
 export async function createDirectMessage(
     content: string,
     senderId: string,
-    receiverId: string
+    receiverId: string,
+    parentId?: string
 ) {
     const message = await prisma.directMessage.create({
         data: {
             content,
             senderId,
             receiverId,
+            parentId
         },
         include: {
             sender: {
@@ -21,7 +23,7 @@ export async function createDirectMessage(
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
             receiver: {
                 select: {
@@ -29,13 +31,41 @@ export async function createDirectMessage(
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
-        },
+            replies: {
+                include: {
+                    sender: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    },
+                    receiver: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    }
+                }
+            }
+        }
     });
 
-    // Emit to both sender and receiver
-    io.to(senderId).to(receiverId).emit('new_dm', message);
+    // Create a unique room ID for this DM conversation
+    const dmRoomId = [senderId, receiverId].sort().join(':');
+
+    // Emit different events based on whether it's a reply or not
+    if (parentId) {
+        io.emit('new_reply', message);
+    } else {
+        io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+    }
+
     return message;
 }
 
@@ -46,6 +76,7 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                 { AND: [{ senderId: userId }, { receiverId: otherUserId }] },
                 { AND: [{ senderId: otherUserId }, { receiverId: userId }] },
             ],
+            parentId: null // Only get top-level messages
         },
         include: {
             sender: {
@@ -54,7 +85,7 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
             receiver: {
                 select: {
@@ -62,11 +93,60 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                     name: true,
                     email: true,
                     avatarUrl: true,
-                },
+                }
             },
+            replies: {
+                include: {
+                    sender: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    },
+                    receiver: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    }
+                }
+            }
         },
         orderBy: {
-            createdAt: 'asc',
+            createdAt: 'asc'
+        }
+    });
+}
+
+export async function getThreadMessages(messageId: string) {
+    return await prisma.directMessage.findMany({
+        where: {
+            parentId: messageId
         },
+        include: {
+            sender: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                }
+            },
+            receiver: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'asc'
+        }
     });
 } 

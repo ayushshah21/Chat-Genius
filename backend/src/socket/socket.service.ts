@@ -166,14 +166,34 @@ export function setupSocketIO(server: Server) {
             console.log('Socket: Emitted new_channel event to all clients');
         });
 
-        socket.on('join_dm', (userId: string) => {
-            socket.join(`dm:${userId}`);
-            console.log(`User ${socket.id} joined DM room for user ${userId}`);
+        socket.on('join_dm', (otherUserId: string) => {
+            const token = socket.handshake.auth.token;
+            if (!token) return;
+
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                // Create a unique room ID for this DM conversation
+                const dmRoomId = [decoded.userId, otherUserId].sort().join(':');
+                socket.join(`dm:${dmRoomId}`);
+                console.log(`User ${decoded.userId} joined DM room ${dmRoomId}`);
+            } catch (error) {
+                console.error('Error joining DM room:', error);
+            }
         });
 
-        socket.on('leave_dm', (userId: string) => {
-            socket.leave(`dm:${userId}`);
-            console.log(`User ${socket.id} left DM room for user ${userId}`);
+        socket.on('leave_dm', (otherUserId: string) => {
+            const token = socket.handshake.auth.token;
+            if (!token) return;
+
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                // Create a unique room ID for this DM conversation
+                const dmRoomId = [decoded.userId, otherUserId].sort().join(':');
+                socket.leave(`dm:${dmRoomId}`);
+                console.log(`User ${decoded.userId} left DM room ${dmRoomId}`);
+            } catch (error) {
+                console.error('Error leaving DM room:', error);
+            }
         });
 
         socket.on('send_dm', async (data: {
@@ -195,13 +215,30 @@ export function setupSocketIO(server: Server) {
                         receiverId: data.receiverId,
                     },
                     include: {
-                        sender: true,
-                        receiver: true,
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true,
+                            }
+                        },
+                        receiver: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true,
+                            }
+                        }
                     }
                 });
 
-                // Emit to both sender's and receiver's DM rooms
-                io.to(`dm:${decoded.userId}`).to(`dm:${data.receiverId}`).emit('new_dm', message);
+                // Create a unique room ID for this DM conversation
+                const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
+
+                // Emit only to the specific DM room
+                io.to(`dm:${dmRoomId}`).emit('new_dm', message);
             } catch (error) {
                 console.error('Error sending DM:', error);
                 socket.emit('message_error', { error: 'Failed to send message' });

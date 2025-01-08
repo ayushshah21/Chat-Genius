@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 export async function createChannel(
     name: string,
-    type: "PUBLIC" | "PRIVATE" | "DM",
+    type: "PUBLIC" | "PRIVATE",
     createdById: string,
     memberIds: string[] = []
 ) {
@@ -110,66 +110,6 @@ export async function removeMemberFromChannel(channelId: string, userId: string)
             }
         }
     });
-}
-
-export async function createDMChannel(userId: string, otherUserId: string) {
-    console.log("Channel Service: Creating DM channel", { userId, otherUserId });
-
-    // First check if DM channel already exists between these users
-    const existingDM = await prisma.channel.findFirst({
-        where: {
-            type: "DM",
-            AND: [
-                { members: { some: { id: userId } } },
-                { members: { some: { id: otherUserId } } }
-            ]
-        },
-        include: {
-            members: {
-                select: {
-                    id: true,
-                    name: true,
-                    avatarUrl: true
-                }
-            }
-        }
-    });
-
-    if (existingDM) {
-        console.log("Channel Service: Found existing DM channel:", existingDM);
-        return existingDM;
-    }
-
-    console.log("Channel Service: No existing DM channel found, creating new one");
-
-    // Create new DM channel
-    const channel = await prisma.channel.create({
-        data: {
-            name: "dm", // Will be overridden in UI with user names
-            type: "DM",
-            createdBy: userId,
-            isPrivate: true,
-            members: {
-                connect: [
-                    { id: userId },
-                    { id: otherUserId }
-                ]
-            }
-        },
-        include: {
-            members: {
-                select: {
-                    id: true,
-                    name: true,
-                    avatarUrl: true
-                }
-            }
-        }
-    });
-
-    console.log("Channel Service: Created new DM channel:", channel);
-    io.emit('new_channel', channel);
-    return channel;
 }
 
 // Add this to get all available users for DMs

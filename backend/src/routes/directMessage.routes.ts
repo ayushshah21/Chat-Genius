@@ -9,6 +9,9 @@ router.use(authGuard);
 router.post("/", (req, res) => {
     directMessageController.createDirectMessage(req, res);
 });
+router.get("/thread/:messageId", (req, res) => {
+    directMessageController.getThreadMessages(req, res);
+});
 router.get("/:otherUserId", (req, res) => {
     directMessageController.getDirectMessages(req, res);
 });
