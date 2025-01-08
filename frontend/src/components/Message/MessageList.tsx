@@ -323,14 +323,16 @@ export default function MessageList({
         />
       )}
 
-      {/* Message Input */}
-      <div className="pt-4 border-t border-gray-700 mt-auto">
-        <MessageInput
-          channelId={channelId}
-          dmUserId={dmUserId}
-          placeholder={channelId ? "Message #channel" : "Message user"}
-        />
-      </div>
+      {/* Message Input - Only show when no thread is open */}
+      {!selectedThread && (
+        <div className="pt-4 border-t border-gray-700 mt-auto">
+          <MessageInput
+            channelId={channelId}
+            dmUserId={dmUserId}
+            placeholder={channelId ? "Message #channel" : "Message user"}
+          />
+        </div>
+      )}
     </div>
   );
 }
