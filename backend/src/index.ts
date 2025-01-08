@@ -26,16 +26,35 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [frontendUrl]
   : [frontendUrl, 'http://localhost:5173'];
 
+// Enable pre-flight requests for all routes
+app.options('*', cors());
+
+const corsOptions = {
+  origin: (requestOrigin: string | undefined, callback: (err: Error | null, origin?: boolean) => void) => {
+    if (!requestOrigin || allowedOrigins.includes(requestOrigin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
+};
+
 const io = new Server(httpServer, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
   }
 });
 
 // Middlewares
+app.use(cors(corsOptions));
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "some_secret_key",
@@ -48,19 +67,6 @@ app.use(
     },
   })
 );
-
-app.use(cors({
-  origin: (requestOrigin: string | undefined, callback: (err: Error | null, origin?: boolean) => void) => {
-    if (!requestOrigin || allowedOrigins.includes(requestOrigin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 app.use(express.json());
 app.use(passport.initialize());
