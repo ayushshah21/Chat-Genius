@@ -16,6 +16,7 @@ const socket_service_1 = require("./socket/socket.service");
 const message_routes_1 = __importDefault(require("./routes/message.routes"));
 const user_routes_1 = __importDefault(require("./routes/user.routes"));
 const directMessage_routes_1 = __importDefault(require("./routes/directMessage.routes"));
+const search_routes_1 = __importDefault(require("./routes/search.routes"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const httpServer = (0, http_1.createServer)(app);
@@ -46,6 +47,7 @@ app.use("/api/channels", channel_routes_1.default);
 app.use("/api/messages", message_routes_1.default);
 app.use("/api/users", user_routes_1.default);
 app.use("/api/direct-messages", directMessage_routes_1.default);
+app.use("/api/search", search_routes_1.default);
 const PORT = process.env.PORT || 4000;
 httpServer.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);

@@ -29,7 +29,10 @@ function registerUser(email, password, name) {
             // First, check if there are any public channels
             const publicChannels = yield tx.channel.findMany({
                 where: {
-                    type: "PUBLIC",
+                    OR: [
+                        { type: "PUBLIC" },
+                        { isPrivate: false }
+                    ]
                 },
                 select: {
                     id: true,

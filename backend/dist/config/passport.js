@@ -24,31 +24,74 @@ passport_1.default.use(new passport_google_oauth20_1.Strategy({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: process.env.GOOGLE_CALLBACK_URL,
 }, (accessToken, refreshToken, profile, done) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
     try {
+        console.log('Google auth profile:', profile);
         // Check if user with this googleId already exists
         let user = yield prisma.user.findUnique({
             where: { googleId: profile.id },
+            include: {
+                channels: true
+            }
         });
         // If user does not exist, create one
         if (!user) {
-            // The user’s Google profile might not always contain an email or displayName,
-            // so be sure to handle that in production code.
-            user = yield prisma.user.create({
-                data: {
-                    googleId: profile.id,
-                    email: ((_a = profile.emails) === null || _a === void 0 ? void 0 : _a[0].value) || "",
-                },
-            });
+            console.log('Creating new Google user');
+            // Start a transaction to handle user creation and channel membership
+            user = yield prisma.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
+                var _a, _b, _c;
+                // Create the user first
+                const newUser = yield tx.user.create({
+                    data: {
+                        googleId: profile.id,
+                        email: ((_a = profile.emails) === null || _a === void 0 ? void 0 : _a[0].value) || "",
+                        name: profile.displayName,
+                        avatarUrl: (_c = (_b = profile.photos) === null || _b === void 0 ? void 0 : _b[0]) === null || _c === void 0 ? void 0 : _c.value,
+                        status: 'online'
+                    },
+                    include: {
+                        channels: true
+                    }
+                });
+                // Get all public channels
+                const publicChannels = yield tx.channel.findMany({
+                    where: {
+                        OR: [
+                            { type: "PUBLIC" },
+                            { isPrivate: false }
+                        ]
+                    }
+                });
+                console.log('Found public channels:', publicChannels);
+                // If there are public channels, add user to them
+                if (publicChannels.length > 0) {
+                    yield tx.user.update({
+                        where: { id: newUser.id },
+                        data: {
+                            channels: {
+                                connect: publicChannels.map(channel => ({ id: channel.id }))
+                            }
+                        },
+                        include: {
+                            channels: true
+                        }
+                    });
+                }
+                return newUser;
+            }));
+            console.log('Created user with channels:', user);
+        }
+        else {
+            console.log('Found existing user:', user);
         }
         // Pass user to next stage
         return done(null, user);
     }
     catch (error) {
+        console.error('Google auth error:', error);
         return done(error);
     }
 })));
-// This is required for maintaining session state via Passport (optional if using session-based).
+// This is required for maintaining session state via Passport
 passport_1.default.serializeUser((user, done) => {
     done(null, user.id);
 });
@@ -56,6 +99,9 @@ passport_1.default.deserializeUser((id, done) => __awaiter(void 0, void 0, void 
     try {
         const user = yield prisma.user.findUnique({
             where: { id },
+            include: {
+                channels: true
+            }
         });
         done(null, user);
     }

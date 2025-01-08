@@ -7,7 +7,7 @@ import { AxiosError } from "axios";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onChannelCreated: () => void;
+  onChannelCreated: (channelId: string) => void;
 }
 
 interface ErrorResponse {
@@ -34,12 +34,14 @@ export default function CreateChannelModal({
     setError("");
 
     try {
-      await axiosInstance.post(API_CONFIG.ENDPOINTS.CHANNELS.CREATE, {
-        name: channelName.trim(),
-        type: isPrivate ? "PRIVATE" : "PUBLIC",
-      });
-      onChannelCreated();
-      onClose();
+      const response = await axiosInstance.post(
+        API_CONFIG.ENDPOINTS.CHANNELS.CREATE,
+        {
+          name: channelName.trim(),
+          type: isPrivate ? "PRIVATE" : "PUBLIC",
+        }
+      );
+      onChannelCreated(response.data.id);
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
       setError(axiosError.response?.data?.error || "Failed to create channel");

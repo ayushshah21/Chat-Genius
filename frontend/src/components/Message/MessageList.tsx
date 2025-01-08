@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import axiosInstance from "../../lib/axios";
@@ -12,6 +12,7 @@ import MessageInput from "./MessageInput";
 interface Props {
   channelId?: string | null;
   dmUserId?: string | null;
+  highlightMessageId?: string | null;
 }
 
 function formatMessageDate(date: Date): string {
@@ -35,19 +36,176 @@ function formatMessageDate(date: Date): string {
   }
 }
 
-export default function MessageList({ channelId, dmUserId }: Props) {
+export default function MessageList({
+  channelId,
+  dmUserId,
+  highlightMessageId,
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedThread, setSelectedThread] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const [initialScrollDone, setInitialScrollDone] = useState(false);
+  const [isSearchResult, setIsSearchResult] = useState(false);
+  const [hasHighlightedMessage, setHasHighlightedMessage] = useState(false);
+  const searchTimeoutRef = useRef<number>();
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Add debug logging for state changes
+  useEffect(() => {
+    console.log("State Change Debug:", {
+      isSearchResult,
+      hasHighlightedMessage,
+      initialScrollDone,
+      highlightMessageId,
+      messageCount: messages.length,
+    });
+  }, [
+    isSearchResult,
+    hasHighlightedMessage,
+    initialScrollDone,
+    highlightMessageId,
+    messages,
+  ]);
+
+  const clearSearchStates = (force = false, reason = "unspecified") => {
+    console.log("Attempting to clear search states:", {
+      force,
+      reason,
+      currentSearchState: isSearchResult,
+      currentHighlightState: hasHighlightedMessage,
+    });
+
+    if (force) {
+      console.log("Forcing clear of search states");
+      setIsSearchResult(false);
+      setHasHighlightedMessage(false);
+    }
   };
 
+  const scrollToBottom = () => {
+    console.log("Scroll to bottom triggered:", {
+      isSearchResult,
+      hasHighlightedMessage,
+      initialScrollDone,
+      highlightMessageId,
+    });
+
+    if (!isSearchResult && !hasHighlightedMessage) {
+      console.log("Executing scroll to bottom");
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      console.log("Scroll to bottom prevented due to:", {
+        isSearchResult,
+        hasHighlightedMessage,
+      });
+    }
+  };
+
+  const scrollToMessage = (messageId: string) => {
+    console.log("Scroll to message triggered:", {
+      messageId,
+      messageExists: !!messageRefs.current[messageId],
+      currentStates: {
+        isSearchResult,
+        hasHighlightedMessage,
+        initialScrollDone,
+      },
+    });
+
+    const messageElement = messageRefs.current[messageId];
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      messageElement.classList.add("highlight-message");
+
+      // Log before timeout
+      console.log("Message highlighted, setting timeout");
+
+      setTimeout(() => {
+        console.log("Highlight timeout completed for:", messageId);
+        messageElement.classList.remove("highlight-message");
+      }, 2000);
+
+      setInitialScrollDone(true);
+    } else {
+      console.log("Message element not found:", messageId);
+    }
+  };
+
+  // Update the highlightMessageId effect
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    console.log("HighlightMessageId effect triggered:", {
+      highlightMessageId,
+      initialScrollDone,
+      messageCount: messages.length,
+    });
+
+    if (highlightMessageId) {
+      console.log("Setting search states for highlighted message");
+      setIsSearchResult(true);
+      setHasHighlightedMessage(true);
+
+      if (!initialScrollDone) {
+        console.log("Setting up scroll to highlighted message");
+        const timer = setTimeout(() => {
+          scrollToMessage(highlightMessageId);
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [highlightMessageId, messages, initialScrollDone]);
+
+  // Update the messages change effect
+  useEffect(() => {
+    console.log("Messages change effect triggered:", {
+      messageCount: messages.length,
+      states: {
+        highlightMessageId,
+        initialScrollDone,
+        isSearchResult,
+        hasHighlightedMessage,
+      },
+    });
+
+    if (
+      !highlightMessageId &&
+      initialScrollDone &&
+      !isSearchResult &&
+      !hasHighlightedMessage
+    ) {
+      console.log("Conditions met for auto-scroll");
+      scrollToBottom();
+    } else {
+      console.log("Auto-scroll prevented due to:", {
+        hasHighlightMessageId: !!highlightMessageId,
+        initialScrollDone,
+        isSearchResult,
+        hasHighlightedMessage,
+      });
+    }
+  }, [
+    messages,
+    highlightMessageId,
+    initialScrollDone,
+    isSearchResult,
+    hasHighlightedMessage,
+  ]);
+
+  // Update channel/DM change effect
+  useEffect(() => {
+    console.log("Channel/DM change effect triggered:", {
+      channelId,
+      dmUserId,
+      currentStates: {
+        isSearchResult,
+        hasHighlightedMessage,
+        initialScrollDone,
+      },
+    });
+
+    clearSearchStates(true, "channel_change");
+    setInitialScrollDone(false);
+  }, [channelId, dmUserId]);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -58,6 +216,9 @@ export default function MessageList({ channelId, dmUserId }: Props) {
             `${API_CONFIG.ENDPOINTS.MESSAGES.CHANNEL}/${channelId}`
           );
           setMessages(response.data);
+          if (!highlightMessageId) {
+            setInitialScrollDone(true);
+          }
         } else if (dmUserId) {
           const currentUserId = localStorage.getItem("userId");
           socket.emit("join_dm", currentUserId);
@@ -67,6 +228,9 @@ export default function MessageList({ channelId, dmUserId }: Props) {
             `${API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.GET(dmUserId)}`
           );
           setMessages(response.data);
+          if (!highlightMessageId) {
+            setInitialScrollDone(true);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch messages:", error);
@@ -85,12 +249,15 @@ export default function MessageList({ channelId, dmUserId }: Props) {
         socket.emit("leave_dm", currentUserId);
         socket.emit("leave_dm", dmUserId);
       }
+      setInitialScrollDone(false);
     };
-  }, [channelId, dmUserId]);
+  }, [channelId, dmUserId, highlightMessageId]);
 
   useEffect(() => {
     const messageHandler = (message: Message) => {
       setMessages((prev) => [...prev, message]);
+      clearSearchStates(true);
+      scrollToBottom();
     };
 
     const replyHandler = (reply: Message) => {
@@ -112,12 +279,7 @@ export default function MessageList({ channelId, dmUserId }: Props) {
       socket.off("new_dm", messageHandler);
       socket.off("new_reply", replyHandler);
     };
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(scrollToBottom, 100);
-    return () => clearTimeout(timer);
-  }, [channelId, dmUserId]);
+  }, [isSearchResult]);
 
   if (loading) {
     return (
@@ -145,6 +307,8 @@ export default function MessageList({ channelId, dmUserId }: Props) {
               key={message.id}
               message={message}
               onThreadClick={() => setSelectedThread(message)}
+              ref={(el) => (messageRefs.current[message.id] = el)}
+              isHighlighted={message.id === highlightMessageId}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -174,50 +338,58 @@ export default function MessageList({ channelId, dmUserId }: Props) {
 interface MessageItemProps {
   message: Message | DirectMessage;
   onThreadClick: () => void;
+  isHighlighted?: boolean;
 }
 
-function MessageItem({ message, onThreadClick }: MessageItemProps) {
-  const userInfo = "user" in message ? message.user : message.sender;
-  const replyCount = "replies" in message ? message.replies?.length || 0 : 0;
+const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
+  ({ message, onThreadClick, isHighlighted }, ref) => {
+    const userInfo = "user" in message ? message.user : message.sender;
+    const replyCount = "replies" in message ? message.replies?.length || 0 : 0;
 
-  if (!userInfo) return null;
+    if (!userInfo) return null;
 
-  return (
-    <div className="flex items-start space-x-3 group hover:bg-[#222529] px-2 py-1 rounded transition-colors duration-200">
-      <img
-        src={
-          userInfo.avatarUrl ||
-          `https://ui-avatars.com/api/?name=${
-            userInfo.name || "User"
-          }&background=random`
-        }
-        alt={userInfo.name || "User"}
-        className="w-8 h-8 rounded-full"
-      />
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-center space-x-2">
-          <span className="font-medium text-white">
-            {userInfo.name || userInfo.email}
-          </span>
-          <span className="text-xs text-gray-400">
-            {formatMessageDate(new Date(message.createdAt))}
-          </span>
-        </div>
-        <p className="text-gray-100 break-words">{message.content}</p>
-        <div className="mt-0.5 flex items-center space-x-2">
-          <button
-            onClick={onThreadClick}
-            className="text-xs text-gray-400 hover:text-blue-400 flex items-center space-x-1 group-hover:visible"
-          >
-            <MessageCircle className="w-3.5 h-3.5" />
-            <span>
-              {replyCount > 0
-                ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
-                : "Reply"}
+    return (
+      <div
+        ref={ref}
+        className={`flex items-start space-x-3 group hover:bg-[#222529] px-2 py-1 rounded transition-colors duration-200 ${
+          isHighlighted ? "highlight-message" : ""
+        }`}
+      >
+        <img
+          src={
+            userInfo.avatarUrl ||
+            `https://ui-avatars.com/api/?name=${
+              userInfo.name || "User"
+            }&background=random`
+          }
+          alt={userInfo.name || "User"}
+          className="w-8 h-8 rounded-full"
+        />
+        <div className="flex-1 overflow-hidden">
+          <div className="flex items-center space-x-2">
+            <span className="font-medium text-white">
+              {userInfo.name || userInfo.email}
             </span>
-          </button>
+            <span className="text-xs text-gray-400">
+              {formatMessageDate(new Date(message.createdAt))}
+            </span>
+          </div>
+          <p className="text-gray-100 break-words">{message.content}</p>
+          <div className="mt-0.5 flex items-center space-x-2">
+            <button
+              onClick={onThreadClick}
+              className="text-xs text-gray-400 hover:text-blue-400 flex items-center space-x-1 group-hover:visible"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>
+                {replyCount > 0
+                  ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
+                  : "Reply"}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+);

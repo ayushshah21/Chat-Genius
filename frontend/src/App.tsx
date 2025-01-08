@@ -3,6 +3,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Channels from "./pages/Channels";
+import Profile from "./pages/Profile";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { UserStatusProvider } from "./contexts/UserStatusContext";
 
@@ -35,6 +36,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Channels />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
               </ProtectedRoute>
             }
           />

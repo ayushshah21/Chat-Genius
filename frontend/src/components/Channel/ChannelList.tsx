@@ -12,12 +12,14 @@ interface Props {
   channels: Channel[];
   selectedChannelId?: string | null;
   selectedUserId?: string | null;
+  onChannelCreated: (newChannelId: string) => void;
 }
 
 export default function ChannelList({
   channels,
   selectedChannelId,
   selectedUserId,
+  onChannelCreated,
 }: Props) {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -111,7 +113,10 @@ export default function ChannelList({
       <CreateChannelModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onChannelCreated={() => setIsCreateModalOpen(false)}
+        onChannelCreated={(channelId) => {
+          setIsCreateModalOpen(false);
+          onChannelCreated(channelId);
+        }}
       />
     </div>
   );

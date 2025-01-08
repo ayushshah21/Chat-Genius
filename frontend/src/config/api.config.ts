@@ -34,6 +34,10 @@ export const API_CONFIG = {
             CREATE: '/api/direct-messages',
             GET: (otherUserId: string) => `/api/direct-messages/${otherUserId}`,
             THREAD: '/api/direct-messages/thread',
+        },
+        SEARCH: {
+            MESSAGES: '/api/search/messages',
+            DIRECT_MESSAGES: '/api/search/direct-messages',
         }
     }
 }; 
