@@ -23,7 +23,11 @@ const httpServer = createServer(app);
 // Configure CORS origins
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [frontendUrl]
+  ? [
+    'https://chat-genius-pied.vercel.app',
+    'https://chat-genius-fzev9646z-ayushshah21s-projects.vercel.app',
+    'https://chat-genius-git-main-ayushshah21s-projects.vercel.app'
+  ]
   : [frontendUrl, 'http://localhost:5173'];
 
 // Enable pre-flight requests for all routes
