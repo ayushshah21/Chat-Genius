@@ -19,7 +19,13 @@ export async function login(req: Request, res: Response) {
     try {
         const { user, token } = await authService.loginUser(email, password);
         return res.json({
-            user: { email: user.email },  // Only send necessary user data
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                avatarUrl: user.avatarUrl,
+                status: user.status
+            },
             token
         });
     } catch (error: any) {
@@ -37,8 +43,17 @@ export async function googleRedirect(req: Request, res: Response) {
     try {
         // Await the token generation
         const token = await authService.generateJWTforGoogleUser(user.id);
+        // Return full user data in query params
+        const userData = await getUserById(user.id);
+        const userDataParam = encodeURIComponent(JSON.stringify({
+            id: userData?.id,
+            email: userData?.email,
+            name: userData?.name,
+            avatarUrl: userData?.avatarUrl,
+            status: userData?.status
+        }));
 
-        return res.redirect(`${ENV_CONFIG.FRONTEND_URL}?token=${token}`);
+        return res.redirect(`${ENV_CONFIG.FRONTEND_URL}?token=${token}&userData=${userDataParam}`);
     } catch (error) {
         console.error('Token generation error:', error);
         return res.status(500).json({ error: "Failed to generate token" });

@@ -4,4 +4,7 @@ export interface User {
     name: string | null;
     avatarUrl: string | null;
     status: string;
+    googleId?: string;
+    createdAt?: string;
+    updatedAt?: string;
 } 

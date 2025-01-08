@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -9,67 +9,52 @@ import {
   Users,
   Shield,
 } from "lucide-react";
-import axiosInstance from "../lib/axios";
-import { API_CONFIG } from "../config/api.config";
 import { socket } from "../lib/socket";
+import { useUserStatus } from "../contexts/UserStatusContext";
 
 export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
+  const { isAuthenticated, setIsAuthenticated } = useUserStatus();
 
   useEffect(() => {
     const token = searchParams.get("token");
+    const userDataParam = searchParams.get("userData");
+
     if (token) {
       localStorage.setItem("token", token);
-      // Initialize socket with the new token from OAuth
-      socket.auth = { token };
-      socket.connect();
+      if (userDataParam) {
+        try {
+          const userData = JSON.parse(decodeURIComponent(userDataParam));
+          localStorage.setItem("userId", userData.id);
+          localStorage.setItem("userName", userData.name);
+          localStorage.setItem("userEmail", userData.email);
+          localStorage.setItem("userAvatar", userData.avatarUrl || "");
+          localStorage.setItem("userStatus", userData.status);
+        } catch (err) {
+          console.error("Failed to parse user data:", err);
+        }
+      }
+      setIsAuthenticated(true);
       navigate("/channels");
       return;
     }
-
-    // Check if user is authenticated but don't redirect
-    const checkAuth = async () => {
-      const existingToken = localStorage.getItem("token");
-      if (existingToken) {
-        try {
-          const response = await axiosInstance.get(
-            API_CONFIG.ENDPOINTS.AUTH.PROTECTED
-          );
-          if (response.data.user) {
-            setIsAuthenticated(true);
-            setUserEmail(response.data.user.email);
-          }
-        } catch (err) {
-          console.error(err);
-          localStorage.removeItem("token");
-        }
-      }
-    };
-
-    checkAuth();
-  }, [navigate, searchParams]);
+  }, [navigate, searchParams, setIsAuthenticated]);
 
   const handleLogout = async () => {
     try {
       // Emit logout event before clearing data
-      socket.emit("logout");
-
-      await axiosInstance.get(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
-      localStorage.removeItem("token");
-      localStorage.removeItem("userId");
+      if (socket.connected) {
+        socket.emit("logout");
+        socket.disconnect();
+      }
+      localStorage.clear();
       setIsAuthenticated(false);
-      setUserEmail("");
       navigate("/login");
     } catch (err) {
       console.error("Logout failed:", err);
-      // Still clear local data even if server logout fails
-      localStorage.removeItem("token");
-      localStorage.removeItem("userId");
+      localStorage.clear();
       setIsAuthenticated(false);
-      setUserEmail("");
       navigate("/login");
     }
   };
@@ -88,7 +73,9 @@ export default function Home() {
             <div className="flex items-center space-x-4">
               {isAuthenticated ? (
                 <>
-                  <span className="text-gray-700">Welcome, {userEmail}</span>
+                  <span className="text-gray-700">
+                    Welcome, {localStorage.getItem("userEmail")}
+                  </span>
                   <Link
                     to="/channels"
                     className="text-blue-600 hover:text-blue-700 px-3 py-2 rounded-md text-sm font-medium"

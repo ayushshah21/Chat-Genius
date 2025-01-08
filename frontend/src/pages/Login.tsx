@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useEffect, useState } from "react";
-import axios, { AxiosError } from "axios";
+import React, { useState } from "react";
+import { AxiosError } from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, LogIn } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
-import { socket } from "../lib/socket";
+import axiosInstance from "../lib/axios";
+import { useUserStatus } from "../contexts/UserStatusContext";
 
 interface ErrorResponse {
   error: string;
@@ -15,61 +16,31 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const validateAndRedirect = async () => {
-      const token = localStorage.getItem("token");
-      if (token) {
-        try {
-          const response = await axios.get(
-            `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH.PROTECTED}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-
-          if (response.data.user) {
-            navigate("/channels");
-          } else {
-            // Clear token if invalid
-            localStorage.removeItem("token");
-            localStorage.removeItem("userId");
-          }
-        } catch (err) {
-          // Clear token on error
-          localStorage.removeItem("token");
-          localStorage.removeItem("userId");
-        }
-      }
-    };
-
-    validateAndRedirect();
-  }, [navigate]);
+  const { setIsAuthenticated } = useUserStatus();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     try {
-      const res = await axios.post(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AUTH.LOGIN}`,
-        {
-          email,
-          password,
-        }
-      );
+      const res = await axiosInstance.post(API_CONFIG.ENDPOINTS.AUTH.LOGIN, {
+        email,
+        password,
+      });
+
       if (res.data.token) {
         localStorage.setItem("token", res.data.token);
-        if (res.data.userId) {
-          localStorage.setItem("userId", res.data.userId);
-          // Initialize socket with the new token
-          socket.auth = { token: res.data.token };
-          socket.connect();
+        if (res.data.user) {
+          localStorage.setItem("userId", res.data.user.id);
+          localStorage.setItem("userName", res.data.user.name || "");
+          localStorage.setItem("userEmail", res.data.user.email);
+          localStorage.setItem("userAvatar", res.data.user.avatarUrl || "");
+          localStorage.setItem("userStatus", res.data.user.status);
         }
+        setIsAuthenticated(true);
         navigate("/channels");
       }
     } catch (err) {
+      console.error("Login error:", err);
       const error = err as AxiosError<ErrorResponse>;
       setError(error.response?.data.error || "Error logging in");
     }

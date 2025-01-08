@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { User } from "../types/user";
-import { socket } from "../lib/socket";
+import { socket, initSocket } from "../lib/socket";
 import axiosInstance from "../lib/axios";
 import { API_CONFIG } from "../config/api.config";
 
 interface UserStatusContextType {
   userStatuses: Record<string, string>;
   updateUserStatus: (userId: string, status: string) => void;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  setIsAuthenticated: (value: boolean) => void;
 }
 
 const UserStatusContext = createContext<UserStatusContextType | undefined>(
@@ -19,51 +22,89 @@ export function UserStatusProvider({
   children: React.ReactNode;
 }) {
   const [userStatuses, setUserStatuses] = useState<Record<string, string>>({});
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch initial user statuses
-    const fetchInitialStatuses = async () => {
+    const validateTokenAndInitialize = async () => {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setIsLoading(false);
+        setIsAuthenticated(false);
+        return;
+      }
+
       try {
         const response = await axiosInstance.get(
-          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+          API_CONFIG.ENDPOINTS.AUTH.PROTECTED
         );
-        const users = response.data;
-        const initialStatuses: Record<string, string> = {};
-        users.forEach((user: User) => {
-          initialStatuses[user.id] = user.status;
-        });
-        setUserStatuses(initialStatuses);
+        if (response.data.user) {
+          setIsAuthenticated(true);
+          // Initialize socket only if not already connected
+          if (!socket.connected) {
+            initSocket(token);
+            // Fetch initial user statuses
+            const statusResponse = await axiosInstance.get(
+              API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+            );
+            const users = statusResponse.data;
+            const initialStatuses: Record<string, string> = {};
+            users.forEach((user: User) => {
+              initialStatuses[user.id] = user.status;
+            });
+            setUserStatuses(initialStatuses);
+          }
+        } else {
+          setIsAuthenticated(false);
+          localStorage.clear();
+        }
       } catch (error) {
-        console.error("Failed to fetch initial user statuses:", error);
+        console.error("Token validation failed:", error);
+        setIsAuthenticated(false);
+        localStorage.clear();
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchInitialStatuses();
+    validateTokenAndInitialize();
 
-    // Listen for user status updates
-    socket.on("user.status", (user: User) => {
+    // Set up socket event listeners
+    const handleStatusUpdate = (user: User) => {
       console.log("[UserStatusContext] Received status update:", user);
       setUserStatuses((prev) => ({
         ...prev,
         [user.id]: user.status,
       }));
-    });
+    };
+
+    socket.on("user.status", handleStatusUpdate);
 
     return () => {
-      socket.off("user.status");
+      socket.off("user.status", handleStatusUpdate);
     };
   }, []);
 
   const updateUserStatus = (userId: string, status: string) => {
-    socket.emit("update_status", status);
-    setUserStatuses((prev) => ({
-      ...prev,
-      [userId]: status,
-    }));
+    if (socket.connected) {
+      socket.emit("update_status", status);
+      setUserStatuses((prev) => ({
+        ...prev,
+        [userId]: status,
+      }));
+    }
   };
 
   return (
-    <UserStatusContext.Provider value={{ userStatuses, updateUserStatus }}>
+    <UserStatusContext.Provider
+      value={{
+        userStatuses,
+        updateUserStatus,
+        isAuthenticated,
+        isLoading,
+        setIsAuthenticated,
+      }}
+    >
       {children}
     </UserStatusContext.Provider>
   );

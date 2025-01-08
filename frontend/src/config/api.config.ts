@@ -19,8 +19,9 @@ export const API_CONFIG = {
             CREATE_DM: '/api/channels/dm',
         },
         USER: {
-            PROFILE: '/api/user/profile',
-            SETTINGS: '/api/user/settings'
+            PROFILE: '/api/users/profile',
+            SETTINGS: '/api/users/settings',
+            UPDATE: '/api/users/update'
         },
         MESSAGES: {
             CREATE: '/api/messages',

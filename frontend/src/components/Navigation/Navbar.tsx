@@ -5,6 +5,7 @@ import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
+import { socket } from "../../lib/socket";
 
 interface SearchResult {
   id: string;
@@ -43,12 +44,19 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await axiosInstance.post(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
-      localStorage.removeItem("token");
-      localStorage.removeItem("userId");
+      // Emit logout event before clearing data
+      socket.emit("logout");
+
+      await axiosInstance.get(API_CONFIG.ENDPOINTS.AUTH.LOGOUT);
+      localStorage.clear(); // Clear all local storage items
+      socket.disconnect();
       navigate("/login");
     } catch (error) {
       console.error("Failed to logout:", error);
+      // Still clear local data even if server logout fails
+      localStorage.clear(); // Clear all local storage items
+      socket.disconnect();
+      navigate("/login");
     }
   };
 

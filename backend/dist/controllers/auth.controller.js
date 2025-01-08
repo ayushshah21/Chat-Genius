@@ -68,7 +68,13 @@ function login(req, res) {
         try {
             const { user, token } = yield authService.loginUser(email, password);
             return res.json({
-                user: { email: user.email }, // Only send necessary user data
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    avatarUrl: user.avatarUrl,
+                    status: user.status
+                },
                 token
             });
         }
@@ -87,7 +93,16 @@ function googleRedirect(req, res) {
         try {
             // Await the token generation
             const token = yield authService.generateJWTforGoogleUser(user.id);
-            return res.redirect(`${env_config_1.ENV_CONFIG.FRONTEND_URL}?token=${token}`);
+            // Return full user data in query params
+            const userData = yield (0, user_service_1.getUserById)(user.id);
+            const userDataParam = encodeURIComponent(JSON.stringify({
+                id: userData === null || userData === void 0 ? void 0 : userData.id,
+                email: userData === null || userData === void 0 ? void 0 : userData.email,
+                name: userData === null || userData === void 0 ? void 0 : userData.name,
+                avatarUrl: userData === null || userData === void 0 ? void 0 : userData.avatarUrl,
+                status: userData === null || userData === void 0 ? void 0 : userData.status
+            }));
+            return res.redirect(`${env_config_1.ENV_CONFIG.FRONTEND_URL}?token=${token}&userData=${userDataParam}`);
         }
         catch (error) {
             console.error('Token generation error:', error);

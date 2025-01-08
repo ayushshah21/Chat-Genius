@@ -5,7 +5,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, UserPlus, User } from "lucide-react";
 import { API_CONFIG } from "../config/api.config";
 import axiosInstance from "../lib/axios";
-import io from "socket.io-client";
 
 interface ErrorResponse {
   error: string;
@@ -17,7 +16,6 @@ export default function Register() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
-  const socket = io();
 
   useEffect(() => {
     const validateAndRedirect = async () => {
@@ -57,9 +55,6 @@ export default function Register() {
         localStorage.setItem("token", res.data.token);
         if (res.data.userId) {
           localStorage.setItem("userId", res.data.userId);
-          // Initialize socket with the new token
-          socket.auth = { token: res.data.token };
-          socket.connect();
         }
         navigate("/channels");
       }
