@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import { X, MessageSquare } from "lucide-react";

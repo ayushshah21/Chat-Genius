@@ -49,7 +49,6 @@ export default function MessageList({
   const [initialScrollDone, setInitialScrollDone] = useState(false);
   const [isSearchResult, setIsSearchResult] = useState(false);
   const [hasHighlightedMessage, setHasHighlightedMessage] = useState(false);
-  const searchTimeoutRef = useRef<number>();
 
   // Add debug logging for state changes
   useEffect(() => {
