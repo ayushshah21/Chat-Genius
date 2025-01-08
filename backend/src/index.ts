@@ -13,14 +13,22 @@ import userRoutes from "./routes/user.routes";
 import directMessageRoutes from "./routes/directMessage.routes";
 import searchRoutes from "./routes/search.routes";
 
-
-dotenv.config();
+dotenv.config({
+  path: `.env.${process.env.NODE_ENV || 'development'}`
+});
 
 const app = express();
 const httpServer = createServer(app);
+
+// Configure CORS origins
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [frontendUrl]
+  : [frontendUrl, 'http://localhost:5173'];
+
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -34,10 +42,23 @@ app.use(
     saveUninitialized: false,
     cookie: {
       maxAge: 1000 * 60 * 60 * 24, // 1 day
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     },
   })
 );
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+
+app.use(cors({
+  origin: (requestOrigin: string | undefined, callback: (err: Error | null, origin?: boolean) => void) => {
+    if (!requestOrigin || allowedOrigins.includes(requestOrigin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 app.use(passport.initialize());
 
@@ -55,5 +76,5 @@ app.use("/api/search", searchRoutes);
 const PORT = process.env.PORT || 4000;
 
 httpServer.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
