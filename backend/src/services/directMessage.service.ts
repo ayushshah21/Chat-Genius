@@ -7,14 +7,20 @@ export async function createDirectMessage(
     content: string,
     senderId: string,
     receiverId: string,
-    parentId?: string
+    parentId?: string,
+    fileIds?: string[]
 ) {
     const message = await prisma.directMessage.create({
         data: {
             content,
             senderId,
             receiverId,
-            parentId
+            parentId,
+            ...(fileIds && {
+                files: {
+                    connect: fileIds.map(id => ({ id }))
+                }
+            })
         },
         include: {
             sender: {
@@ -33,6 +39,7 @@ export async function createDirectMessage(
                     avatarUrl: true,
                 }
             },
+            files: true,
             replies: {
                 include: {
                     sender: {
@@ -70,7 +77,9 @@ export async function createDirectMessage(
 }
 
 export async function getDirectMessages(userId: string, otherUserId: string) {
-    return await prisma.directMessage.findMany({
+    console.log(`Fetching DMs between users ${userId} and ${otherUserId}`);
+
+    const messages = await prisma.directMessage.findMany({
         where: {
             OR: [
                 { AND: [{ senderId: userId }, { receiverId: otherUserId }] },
@@ -95,6 +104,7 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                     avatarUrl: true,
                 }
             },
+            files: true,
             replies: {
                 include: {
                     sender: {
@@ -113,13 +123,29 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                             avatarUrl: true,
                         }
                     }
+                },
+                orderBy: {
+                    createdAt: 'asc'
                 }
             }
         },
-        orderBy: {
-            createdAt: 'asc'
-        }
+        orderBy: [
+            {
+                createdAt: 'desc'
+            }
+        ]
     });
+
+    console.log('Messages from DB (ordered by createdAt asc):',
+        messages.map(m => ({
+            id: m.id,
+            content: m.content ? m.content.substring(0, 20) + '...' : '[no content]',
+            createdAt: m.createdAt,
+            timestamp: new Date(m.createdAt).getTime()
+        }))
+    );
+
+    return messages;
 }
 
 export async function getThreadMessages(messageId: string) {

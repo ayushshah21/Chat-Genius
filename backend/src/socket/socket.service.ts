@@ -203,6 +203,8 @@ export function setupSocketIO(server: Server) {
         socket.on('send_dm', async (data: {
             content: string;
             receiverId: string;
+            parentId?: string;
+            fileIds?: string[];
         }) => {
             const token = socket.handshake.auth.token;
             if (!token) {
@@ -217,6 +219,12 @@ export function setupSocketIO(server: Server) {
                         content: data.content,
                         senderId: decoded.userId,
                         receiverId: data.receiverId,
+                        parentId: data.parentId,
+                        ...(data.fileIds && {
+                            files: {
+                                connect: data.fileIds.map(id => ({ id }))
+                            }
+                        })
                     },
                     include: {
                         sender: {
@@ -234,15 +242,22 @@ export function setupSocketIO(server: Server) {
                                 email: true,
                                 avatarUrl: true,
                             }
-                        }
+                        },
+                        files: true
                     }
                 });
 
                 // Create a unique room ID for this DM conversation
                 const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
 
-                // Emit only to the specific DM room
-                io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+                // Emit different events based on whether it's a reply or not
+                if (data.parentId) {
+                    io.emit('new_reply', message);
+                } else {
+                    io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+                }
+
+                return message;
             } catch (error) {
                 console.error('Error sending DM:', error);
                 socket.emit('message_error', { error: 'Failed to send message' });
@@ -251,44 +266,90 @@ export function setupSocketIO(server: Server) {
 
         // Handle file upload notification
         socket.on('file_upload_complete', async (data: {
-            messageId: string,
+            channelId?: string,
+            dmUserId?: string,
             fileId: string,
-            size: number
+            size: number,
+            messageId: string,
+            parentId?: string
         }) => {
             try {
+                console.log('[SocketService] Processing file_upload_complete:', data);
+
                 // Update file size
                 await prisma.file.update({
                     where: { id: data.fileId },
                     data: { size: data.size }
                 });
+                console.log('[SocketService] Updated file size');
 
-                // Get updated message with file info
-                const message = await prisma.message.findUnique({
-                    where: { id: data.messageId },
-                    include: {
-                        user: {
-                            select: {
-                                id: true,
-                                name: true,
-                                email: true,
-                                avatarUrl: true
-                            }
-                        },
-                        files: true
+                if (data.channelId) {
+                    // Handle channel message
+                    const message = await prisma.message.findUnique({
+                        where: { id: data.messageId },
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            },
+                            files: true
+                        }
+                    });
+
+                    if (message) {
+                        if (message.parentId) {
+                            io.emit('new_reply', message);
+                        } else {
+                            io.to(message.channelId).emit('new_message', message);
+                        }
                     }
-                });
+                } else if (data.dmUserId) {
+                    // Handle DM message
+                    const dm = await prisma.directMessage.findUnique({
+                        where: { id: data.messageId },
+                        include: {
+                            sender: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            },
+                            receiver: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            },
+                            files: true
+                        }
+                    });
 
-                if (message) {
-                    if (message.parentId) {
-                        // If it's a thread message
-                        io.emit('new_reply', message);
-                    } else {
-                        // If it's a channel message
-                        io.to(message.channelId).emit('new_message', message);
+                    if (dm) {
+                        if (dm.parentId) {
+                            console.log('[SocketService] Broadcasting new_reply for file in thread');
+                            io.emit('new_reply', dm);
+                        } else {
+                            // Create a unique room ID for this DM conversation
+                            const dmRoomId = [dm.senderId, dm.receiverId].sort().join(':');
+                            console.log('[SocketService] Broadcasting new_dm for file:', {
+                                dmRoomId,
+                                messageId: dm.id,
+                                hasFiles: dm.files?.length > 0
+                            });
+                            io.to(`dm:${dmRoomId}`).emit('new_dm', dm);
+                        }
                     }
                 }
             } catch (error) {
-                console.error('Error handling file upload complete:', error);
+                console.error('[SocketService] Error in file_upload_complete:', error);
             }
         });
     });

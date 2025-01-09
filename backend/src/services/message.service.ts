@@ -66,7 +66,7 @@ export async function getChannelMessages(channelId: string) {
             }
         },
         orderBy: {
-            createdAt: 'asc'
+            createdAt: 'desc'
         },
         take: 50
     });

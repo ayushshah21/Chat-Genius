@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import * as directMessageService from "../services/directMessage.service";
 
 export async function createDirectMessage(req: Request, res: Response) {
-    const { content, receiverId, parentId } = req.body;
+    const { content, receiverId, parentId, fileIds } = req.body;
     const senderId = (req as any).userId;
 
     try {
@@ -10,7 +10,8 @@ export async function createDirectMessage(req: Request, res: Response) {
             content,
             senderId,
             receiverId,
-            parentId
+            parentId,
+            fileIds
         );
         res.status(201).json(message);
     } catch (error: any) {
