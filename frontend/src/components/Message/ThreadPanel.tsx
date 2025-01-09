@@ -18,8 +18,38 @@ export default function ThreadPanel({
 }: ThreadPanelProps) {
   const [replies, setReplies] = useState<(Message | DirectMessage)[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
+  const [previewErrors, setPreviewErrors] = useState<{
+    [key: string]: boolean;
+  }>({});
   const userInfo =
     "user" in parentMessage ? parentMessage.user : parentMessage.sender;
+
+  const isPreviewable = (type: string) => {
+    return type.startsWith("image/");
+  };
+
+  const handlePreviewError = (fileId: string) => {
+    setPreviewErrors((prev) => ({ ...prev, [fileId]: true }));
+  };
+
+  // Function to fetch file URLs for a message
+  const fetchFileUrlsForMessage = async (message: Message | DirectMessage) => {
+    if ("files" in message && message.files && message.files.length > 0) {
+      const urls: { [key: string]: string } = {};
+      for (const file of message.files) {
+        try {
+          const response = await axiosInstance.get(
+            API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
+          );
+          urls[file.id] = response.data.url;
+        } catch (error) {
+          console.error("Failed to get download URL for file:", file.id, error);
+        }
+      }
+      setFileUrls((prev) => ({ ...prev, ...urls }));
+    }
+  };
 
   useEffect(() => {
     const fetchReplies = async () => {
@@ -30,6 +60,10 @@ export default function ThreadPanel({
             : API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.THREAD(parentMessage.id);
         const response = await axiosInstance.get(endpoint);
         setReplies(response.data);
+
+        // Fetch file URLs for parent message and all replies
+        await fetchFileUrlsForMessage(parentMessage);
+        await Promise.all(response.data.map(fetchFileUrlsForMessage));
       } catch (error) {
         console.error("Failed to fetch replies:", error);
       } finally {
@@ -40,9 +74,10 @@ export default function ThreadPanel({
     fetchReplies();
 
     // Listen for new replies
-    const handleNewReply = (reply: Message | DirectMessage) => {
+    const handleNewReply = async (reply: Message | DirectMessage) => {
       if (reply.parentId === parentMessage.id) {
         setReplies((prev) => [...prev, reply]);
+        await fetchFileUrlsForMessage(reply);
       }
     };
 
@@ -93,7 +128,7 @@ export default function ThreadPanel({
             alt={userInfo.name || "User"}
             className="w-10 h-10 rounded-full border-2 border-gray-700"
           />
-          <div>
+          <div className="flex-1">
             <div className="flex items-center space-x-2">
               <span className="font-medium text-white">
                 {userInfo.name || userInfo.email}
@@ -105,7 +140,65 @@ export default function ThreadPanel({
                 })}
               </span>
             </div>
-            <p className="text-gray-100 mt-1">{parentMessage.content}</p>
+            {parentMessage.content && (
+              <p className="text-gray-100 mt-1">{parentMessage.content}</p>
+            )}
+            {"files" in parentMessage &&
+              parentMessage.files &&
+              parentMessage.files.length > 0 && (
+                <div className="mt-2 space-y-2">
+                  {parentMessage.files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex flex-col space-y-2 bg-[#1A1D21] p-2 rounded"
+                    >
+                      {fileUrls[file.id] &&
+                        isPreviewable(file.type) &&
+                        !previewErrors[file.id] && (
+                          <div className="max-w-md">
+                            <img
+                              src={fileUrls[file.id]}
+                              alt={file.name}
+                              className="rounded-md max-h-96 object-contain"
+                              onError={() => handlePreviewError(file.id)}
+                            />
+                          </div>
+                        )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-300">{file.name}</p>
+                          <p className="text-xs text-gray-400">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <div className="flex space-x-2">
+                          {fileUrls[file.id] && (
+                            <a
+                              href={fileUrls[file.id]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                            >
+                              {file.type === "application/pdf"
+                                ? "Open PDF"
+                                : "View"}
+                            </a>
+                          )}
+                          <a
+                            href={fileUrls[file.id]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                            download
+                          >
+                            Download
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -146,7 +239,67 @@ export default function ThreadPanel({
                       })}
                     </span>
                   </div>
-                  <p className="text-gray-100 break-words">{reply.content}</p>
+                  {reply.content && (
+                    <p className="text-gray-100 break-words">{reply.content}</p>
+                  )}
+                  {"files" in reply &&
+                    reply.files &&
+                    reply.files.length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {reply.files.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex flex-col space-y-2 bg-[#222529] p-2 rounded"
+                          >
+                            {fileUrls[file.id] &&
+                              isPreviewable(file.type) &&
+                              !previewErrors[file.id] && (
+                                <div className="max-w-md">
+                                  <img
+                                    src={fileUrls[file.id]}
+                                    alt={file.name}
+                                    className="rounded-md max-h-96 object-contain"
+                                    onError={() => handlePreviewError(file.id)}
+                                  />
+                                </div>
+                              )}
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <p className="text-sm text-gray-300">
+                                  {file.name}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  {(file.size / 1024).toFixed(1)} KB
+                                </p>
+                              </div>
+                              <div className="flex space-x-2">
+                                {fileUrls[file.id] && (
+                                  <a
+                                    href={fileUrls[file.id]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                                  >
+                                    {file.type === "application/pdf"
+                                      ? "Open PDF"
+                                      : "View"}
+                                  </a>
+                                )}
+                                <a
+                                  href={fileUrls[file.id]}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                                  download
+                                >
+                                  Download
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                 </div>
               </div>
             );

@@ -5,6 +5,8 @@ import { API_CONFIG } from "../../config/api.config";
 import { socket } from "../../lib/socket";
 import MessageInput from "../Message/MessageInput";
 import { useParams } from "react-router-dom";
+import { MessageCircle } from "lucide-react";
+import ThreadPanel from "../Message/ThreadPanel";
 
 export default function DirectMessageChat() {
   const { userId } = useParams();
@@ -13,6 +15,9 @@ export default function DirectMessageChat() {
   const currentUserId = localStorage.getItem("userId");
   const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [selectedThread, setSelectedThread] = useState<DirectMessage | null>(
+    null
+  );
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -89,16 +94,34 @@ export default function DirectMessageChat() {
 
     // Listen for new DMs and replies
     const handleNewMessage = async (message: DirectMessage) => {
-      console.log("Received new message:", message);
+      console.log("Received new message:", {
+        messageId: message.id,
+        content: message.content,
+        hasFiles: message.files && message.files.length > 0,
+        isThreadReply: !!message.parentId,
+      });
+
       if (
         (message.senderId === userId && message.receiverId === currentUserId) ||
         (message.senderId === currentUserId && message.receiverId === userId)
       ) {
-        await fetchFileUrls(message);
-        setMessages((prev) => {
-          const newMessages = [...prev, message];
-          return newMessages;
-        });
+        // Only add to main list if it's not a thread reply
+        if (!message.parentId) {
+          await fetchFileUrls(message);
+          setMessages((prev) => {
+            const newMessages = [...prev, message];
+            return newMessages;
+          });
+        } else {
+          // Update the parent message's replies
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === message.parentId
+                ? { ...msg, replies: [...(msg.replies || []), message] }
+                : msg
+            )
+          );
+        }
       }
     };
 
@@ -186,14 +209,41 @@ export default function DirectMessageChat() {
                   ))}
                 </div>
               )}
+              <div className="mt-1 flex items-center space-x-2">
+                <button
+                  onClick={() => setSelectedThread(message)}
+                  className="text-xs text-gray-500 hover:text-blue-600 flex items-center space-x-1"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>
+                    {message.replies && message.replies.length > 0
+                      ? `${message.replies.length} ${
+                          message.replies.length === 1 ? "reply" : "replies"
+                        }`
+                      : "Reply"}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <div className="p-4 border-t">
-        <MessageInput dmUserId={userId} placeholder="Type a message..." />
-      </div>
+
+      {/* Thread Panel */}
+      {selectedThread && (
+        <ThreadPanel
+          parentMessage={selectedThread}
+          onClose={() => setSelectedThread(null)}
+        />
+      )}
+
+      {/* Message Input - Only show when no thread is open */}
+      {!selectedThread && (
+        <div className="p-4 border-t">
+          <MessageInput dmUserId={userId} placeholder="Type a message..." />
+        </div>
+      )}
     </div>
   );
 }

@@ -74,7 +74,13 @@ export default function MessageInput({
           });
 
           // Get upload URL first
-          console.log("Requesting upload URL...");
+          console.log("Requesting upload URL...", {
+            fileName: selectedFile.name,
+            fileType: selectedFile.type,
+            channelId,
+            dmUserId,
+            messageContent: message,
+          });
           try {
             const uploadResponse = await axiosInstance.post(
               API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
@@ -82,9 +88,14 @@ export default function MessageInput({
                 fileName: selectedFile.name,
                 fileType: selectedFile.type,
                 channelId,
+                content: message,
+                parentId,
               }
             );
-            console.log("Received upload URL response:", uploadResponse.data);
+            console.log("Received upload URL response:", {
+              ...uploadResponse.data,
+              isThread: !!parentId,
+            });
 
             // Upload file to S3
             console.log("Starting S3 upload...");
@@ -208,9 +219,13 @@ export default function MessageInput({
                 fileType: selectedFile.type,
                 dmUserId,
                 parentId,
+                content: message,
               }
             );
-            console.log("Received upload URL response:", uploadResponse.data);
+            console.log(
+              "Received upload URL response for DM:",
+              uploadResponse.data
+            );
 
             // Upload file to S3
             console.log("Starting S3 upload...");

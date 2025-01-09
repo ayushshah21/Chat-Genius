@@ -254,12 +254,28 @@ export default function MessageList({
 
   useEffect(() => {
     const messageHandler = (message: Message) => {
-      setMessages((prev) => [message, ...prev]);
-      clearSearchStates(true);
-      scrollToBottom();
+      // Only add to main list if it's not a thread reply
+      if (!message.parentId) {
+        console.log("Adding new message to main list:", {
+          messageId: message.id,
+          content: message.content,
+          hasFiles:
+            "files" in message && message.files && message.files.length > 0,
+          isThreadReply: !!message.parentId,
+        });
+        setMessages((prev) => [message, ...prev]);
+        clearSearchStates(true);
+        scrollToBottom();
+      }
     };
 
     const replyHandler = (reply: Message) => {
+      console.log("Handling thread reply:", {
+        replyId: reply.id,
+        parentId: reply.parentId,
+        content: reply.content,
+        hasFiles: "files" in reply && reply.files && reply.files.length > 0,
+      });
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === reply.parentId
@@ -345,11 +361,21 @@ interface MessageItemProps {
 const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
   ({ message, onThreadClick, isHighlighted }, ref) => {
     const userInfo = "user" in message ? message.user : message.sender;
-    const replyCount = "replies" in message ? message.replies?.length || 0 : 0;
+    const replyCount =
+      "replies" in message && message.replies ? message.replies.length : 0;
     const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
     const [previewErrors, setPreviewErrors] = useState<{
       [key: string]: boolean;
     }>({});
+
+    console.log("Rendering message:", {
+      messageId: message.id,
+      content: message.content,
+      hasFiles: "files" in message && message.files && message.files.length > 0,
+      files: "files" in message && message.files ? message.files : null,
+      replyCount,
+      replies: "replies" in message ? message.replies : null,
+    });
 
     const isPreviewable = (type: string) => {
       return type.startsWith("image/"); // Remove PDF from previewable types
