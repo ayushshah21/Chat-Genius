@@ -21,7 +21,7 @@ export default function Profile() {
     const fetchProfile = async () => {
       try {
         const response = await axiosInstance.get(
-          API_CONFIG.ENDPOINTS.USER.PROFILE
+          API_CONFIG.ENDPOINTS.USERS.PROFILE
         );
         setUser(response.data);
         setEditForm({
@@ -45,7 +45,7 @@ export default function Profile() {
 
     try {
       const response = await axiosInstance.put(
-        API_CONFIG.ENDPOINTS.USER.UPDATE,
+        API_CONFIG.ENDPOINTS.USERS.UPDATE,
         editForm
       );
       setUser(response.data);

@@ -1,8 +1,20 @@
 // import { User } from './user';
 
+export interface FileAttachment {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+    key: string;
+    messageId: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface Message {
     id: string;
-    content: string;
+    content: string | null;
     channelId: string;
     userId: string;
     parentId?: string;
@@ -18,4 +30,5 @@ export interface Message {
         name: string;
     };
     replies?: Message[];
+    files?: FileAttachment[];
 } 

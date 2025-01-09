@@ -1,6 +1,6 @@
 export const API_CONFIG = {
-    BASE_URL: import.meta.env.VITE_APP_BACKEND_URL,
-    GOOGLE_OAUTH_URL: import.meta.env.VITE_APP_GOOGLE_OAUTH_URL,
+    BASE_URL: import.meta.env.VITE_APP_BACKEND_URL || "http://localhost:4000",
+    GOOGLE_OAUTH_URL: import.meta.env.VITE_APP_GOOGLE_OAUTH_URL || "http://localhost:4000/api/auth/google",
     ENDPOINTS: {
         AUTH: {
             LOGIN: '/api/auth/login',
@@ -18,27 +18,30 @@ export const API_CONFIG = {
             LEAVE: (id: string) => `/api/channels/${id}/leave`,
             CREATE_DM: '/api/channels/dm',
         },
-        USER: {
-            PROFILE: '/api/users/profile',
-            SETTINGS: '/api/users/settings',
-            UPDATE: '/api/users/update'
-        },
         MESSAGES: {
-            CREATE: '/api/messages',
             CHANNEL: '/api/messages/channel',
-            THREAD: '/api/messages/thread',
-        },
-        USERS: {
-            AVAILABLE: '/api/users/available',
+            CREATE: '/api/messages',
+            THREAD: (parentId: string) => `/api/messages/thread/${parentId}`,
         },
         DIRECT_MESSAGES: {
             CREATE: '/api/direct-messages',
-            GET: (otherUserId: string) => `/api/direct-messages/${otherUserId}`,
-            THREAD: '/api/direct-messages/thread',
+            GET: (userId: string) => `/api/direct-messages/${userId}`,
+            THREAD: (parentId: string) => `/api/direct-messages/thread/${parentId}`,
+        },
+        USERS: {
+            AVAILABLE: '/api/users/available',
+            PROFILE: '/api/users/profile',
+            UPDATE: '/api/users/update'
         },
         SEARCH: {
+            ALL: '/api/search',
             MESSAGES: '/api/search/messages',
-            DIRECT_MESSAGES: '/api/search/direct-messages',
+            DIRECT_MESSAGES: '/api/search/direct-messages'
+        },
+        FILES: {
+            UPLOAD_URL: '/api/files/upload-url',
+            DOWNLOAD_URL: (fileId: string) => `/api/files/download-url/${fileId}`,
+            UPDATE_METADATA: (fileId: string) => `/api/files/${fileId}/metadata`
         }
     }
 }; 

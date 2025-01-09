@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useRef } from "react";
-import { Message } from "../../types/message";
+import { Message, FileAttachment } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
@@ -254,7 +254,7 @@ export default function MessageList({
 
   useEffect(() => {
     const messageHandler = (message: Message) => {
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => [message, ...prev]);
       clearSearchStates(true);
       scrollToBottom();
     };
@@ -301,7 +301,7 @@ export default function MessageList({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col space-y-1 min-h-0">
-          {messages.map((message) => (
+          {[...messages].reverse().map((message) => (
             <MessageItem
               key={message.id}
               message={message}
@@ -346,6 +346,43 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
   ({ message, onThreadClick, isHighlighted }, ref) => {
     const userInfo = "user" in message ? message.user : message.sender;
     const replyCount = "replies" in message ? message.replies?.length || 0 : 0;
+    const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
+    const [previewErrors, setPreviewErrors] = useState<{
+      [key: string]: boolean;
+    }>({});
+
+    const isPreviewable = (type: string) => {
+      return type.startsWith("image/"); // Remove PDF from previewable types
+    };
+
+    const handlePreviewError = (fileId: string) => {
+      setPreviewErrors((prev) => ({ ...prev, [fileId]: true }));
+    };
+
+    useEffect(() => {
+      const fetchFileUrls = async () => {
+        if ("files" in message && message.files && message.files.length > 0) {
+          const urls: { [key: string]: string } = {};
+          for (const file of message.files) {
+            try {
+              const response = await axiosInstance.get(
+                API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
+              );
+              urls[file.id] = response.data.url;
+            } catch (error) {
+              console.error(
+                "Failed to get download URL for file:",
+                file.id,
+                error
+              );
+            }
+          }
+          setFileUrls(urls);
+        }
+      };
+
+      fetchFileUrls();
+    }, [message]);
 
     if (!userInfo) return null;
 
@@ -375,7 +412,63 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
               {formatMessageDate(new Date(message.createdAt))}
             </span>
           </div>
-          <p className="text-gray-100 break-words">{message.content}</p>
+          {message.content && (
+            <p className="text-gray-100 break-words">{message.content}</p>
+          )}
+          {"files" in message && message.files && message.files.length > 0 && (
+            <div className="mt-2 space-y-2">
+              {message.files.map((file: FileAttachment) => (
+                <div
+                  key={file.id}
+                  className="flex flex-col space-y-2 bg-[#222529] p-2 rounded"
+                >
+                  {fileUrls[file.id] &&
+                    isPreviewable(file.type) &&
+                    !previewErrors[file.id] && (
+                      <div className="max-w-md">
+                        <img
+                          src={fileUrls[file.id]}
+                          alt={file.name}
+                          className="rounded-md max-h-96 object-contain"
+                          onError={() => handlePreviewError(file.id)}
+                        />
+                      </div>
+                    )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-300">{file.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      {fileUrls[file.id] && (
+                        <a
+                          href={fileUrls[file.id]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                        >
+                          {file.type === "application/pdf"
+                            ? "Open PDF"
+                            : "View"}
+                        </a>
+                      )}
+                      <a
+                        href={fileUrls[file.id]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                        download
+                      >
+                        Download
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="mt-0.5 flex items-center space-x-2">
             <button
               onClick={onThreadClick}

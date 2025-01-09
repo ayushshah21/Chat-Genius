@@ -26,8 +26,8 @@ export default function ThreadPanel({
       try {
         const endpoint =
           "user" in parentMessage
-            ? `${API_CONFIG.ENDPOINTS.MESSAGES.THREAD}/${parentMessage.id}`
-            : `${API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.THREAD}/${parentMessage.id}`;
+            ? API_CONFIG.ENDPOINTS.MESSAGES.THREAD(parentMessage.id)
+            : API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.THREAD(parentMessage.id);
         const response = await axiosInstance.get(endpoint);
         setReplies(response.data);
       } catch (error) {

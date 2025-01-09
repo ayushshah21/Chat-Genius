@@ -1,3 +1,5 @@
+import { FileAttachment } from './message';
+
 export interface DirectMessage {
     id: string;
     content: string;
@@ -18,4 +20,5 @@ export interface DirectMessage {
         avatarUrl: string | null;
     };
     replies?: DirectMessage[];
+    files?: FileAttachment[];
 } 
