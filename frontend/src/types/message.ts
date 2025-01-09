@@ -12,6 +12,16 @@ export interface FileAttachment {
     updatedAt: string;
 }
 
+export interface EmojiReaction {
+    emoji: string;
+    users: {
+        id: string;
+        name: string | null;
+        email: string;
+        avatarUrl: string | null;
+    }[];
+}
+
 export interface Message {
     id: string;
     content: string | null;
@@ -31,4 +41,5 @@ export interface Message {
     };
     replies?: Message[];
     files?: FileAttachment[];
+    reactions?: EmojiReaction[];
 } 

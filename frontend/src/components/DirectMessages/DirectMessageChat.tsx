@@ -7,6 +7,7 @@ import MessageInput from "../Message/MessageInput";
 import { useParams } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 import ThreadPanel from "../Message/ThreadPanel";
+import EmojiReactions from "../Message/EmojiReactions";
 
 export default function DirectMessageChat() {
   const { userId } = useParams();
@@ -88,8 +89,8 @@ export default function DirectMessageChat() {
     // Create and join DM room
     if (userId && currentUserId) {
       const dmRoomId = [userId, currentUserId].sort().join(":");
-      console.log("Joining DM room:", dmRoomId);
-      socket.emit("join_dm", dmRoomId);
+      console.log("Joining DM room:", `dm:${dmRoomId}`);
+      socket.emit("join_dm", userId);
     }
 
     // Listen for new DMs and replies
@@ -105,22 +106,49 @@ export default function DirectMessageChat() {
         (message.senderId === userId && message.receiverId === currentUserId) ||
         (message.senderId === currentUserId && message.receiverId === userId)
       ) {
+        // Fetch file URLs before adding the message
+        if (message.files && message.files.length > 0) {
+          await fetchFileUrls(message);
+        }
+
         // Only add to main list if it's not a thread reply
         if (!message.parentId) {
-          await fetchFileUrls(message);
           setMessages((prev) => {
-            const newMessages = [...prev, message];
-            return newMessages;
+            // Check if message already exists
+            const exists = prev.some((m) => m.id === message.id);
+            if (exists) {
+              // Update existing message
+              return prev.map((m) => (m.id === message.id ? message : m));
+            }
+            // Add new message
+            return [...prev, message];
           });
         } else {
           // Update the parent message's replies
           setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === message.parentId
-                ? { ...msg, replies: [...(msg.replies || []), message] }
-                : msg
-            )
+            prev.map((msg) => {
+              if (msg.id === message.parentId) {
+                // Ensure replies array exists and add the new reply
+                const currentReplies = msg.replies || [];
+                const replyExists = currentReplies.some(
+                  (r) => r.id === message.id
+                );
+                const updatedReplies = replyExists
+                  ? currentReplies.map((r) =>
+                      r.id === message.id ? message : r
+                    )
+                  : [...currentReplies, message];
+
+                return { ...msg, replies: updatedReplies };
+              }
+              return msg;
+            })
           );
+        }
+
+        // Scroll to bottom for new messages
+        if (!message.parentId) {
+          scrollToBottom();
         }
       }
     };
@@ -131,8 +159,8 @@ export default function DirectMessageChat() {
     return () => {
       if (userId && currentUserId) {
         const dmRoomId = [userId, currentUserId].sort().join(":");
-        console.log("Leaving DM room:", dmRoomId);
-        socket.emit("leave_dm", dmRoomId);
+        console.log("Leaving DM room:", `dm:${dmRoomId}`);
+        socket.emit("leave_dm", userId);
       }
       socket.off("new_dm", handleNewMessage);
       socket.off("new_reply", handleNewMessage);
@@ -209,7 +237,15 @@ export default function DirectMessageChat() {
                   ))}
                 </div>
               )}
-              <div className="mt-1 flex items-center space-x-2">
+              <div className="mt-2 flex items-center space-x-4">
+                <EmojiReactions
+                  messageId={message.id}
+                  isDM={true}
+                  reactions={message.reactions || []}
+                  key={`reactions-${message.id}-${JSON.stringify(
+                    message.reactions
+                  )}`}
+                />
                 <button
                   onClick={() => setSelectedThread(message)}
                   className="text-xs text-gray-500 hover:text-blue-600 flex items-center space-x-1"

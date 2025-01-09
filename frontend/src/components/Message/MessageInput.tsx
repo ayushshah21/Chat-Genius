@@ -159,9 +159,10 @@ export default function MessageInput({
               // Notify about file upload completion
               const fileUploadData = {
                 channelId,
-                fileId: uploadResponse.data.fileId,
+                fileId: uploadResponse.data.id,
                 messageId: uploadResponse.data.messageId,
                 size: selectedFile.size,
+                parentId,
               };
               console.log(
                 "Emitting file_upload_complete with data:",
@@ -289,7 +290,7 @@ export default function MessageInput({
               // Notify about file upload completion
               const fileUploadData = {
                 dmUserId,
-                fileId: uploadResponse.data.fileId,
+                fileId: uploadResponse.data.id,
                 messageId: uploadResponse.data.messageId,
                 size: selectedFile.size,
                 parentId,

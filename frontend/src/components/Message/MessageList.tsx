@@ -8,6 +8,7 @@ import { socket } from "../../lib/socket";
 import ThreadPanel from "./ThreadPanel";
 import { MessageCircle } from "lucide-react";
 import MessageInput from "./MessageInput";
+import EmojiReactions from "./EmojiReactions";
 
 interface Props {
   channelId?: string | null;
@@ -211,6 +212,8 @@ export default function MessageList({
       try {
         if (channelId) {
           socket.emit("join_channel", channelId);
+          socket.emit("join_channel", `channel_${channelId}`);
+
           const response = await axiosInstance.get(
             `${API_CONFIG.ENDPOINTS.MESSAGES.CHANNEL}/${channelId}`
           );
@@ -243,6 +246,7 @@ export default function MessageList({
     return () => {
       if (channelId) {
         socket.emit("leave_channel", channelId);
+        socket.emit("leave_channel", `channel_${channelId}`);
       } else if (dmUserId) {
         const currentUserId = localStorage.getItem("userId");
         socket.emit("leave_dm", currentUserId);
@@ -495,10 +499,15 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
               ))}
             </div>
           )}
-          <div className="mt-0.5 flex items-center space-x-2">
+          <div className="mt-2 flex items-center space-x-4">
+            <EmojiReactions
+              messageId={message.id}
+              isDM={false}
+              reactions={message.reactions || []}
+            />
             <button
               onClick={onThreadClick}
-              className="text-xs text-gray-400 hover:text-blue-400 flex items-center space-x-1 group-hover:visible"
+              className="text-xs text-gray-400 hover:text-blue-400 flex items-center space-x-1 transition-colors duration-200"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               <span>

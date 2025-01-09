@@ -1,4 +1,5 @@
 import { FileAttachment } from './message';
+import { EmojiReaction } from './message';
 
 export interface DirectMessage {
     id: string;
@@ -21,4 +22,5 @@ export interface DirectMessage {
     };
     replies?: DirectMessage[];
     files?: FileAttachment[];
+    reactions?: EmojiReaction[];
 } 
