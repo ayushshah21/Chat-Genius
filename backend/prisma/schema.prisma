@@ -20,6 +20,7 @@ model User {
   createdBy   Channel[]       @relation("ChannelCreator")
   sentDMs     DirectMessage[] @relation("SenderDMs")
   receivedDMs DirectMessage[] @relation("ReceiverDMs")
+  reactions   EmojiReaction[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
@@ -37,18 +38,19 @@ model Channel {
 }
 
 model Message {
-  id        String    @id @default(uuid())
+  id        String          @id @default(uuid())
   channelId String
   userId    String
-  content   String?   @db.Text
+  content   String?         @db.Text
   parentId  String?
-  channel   Channel   @relation(fields: [channelId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
-  parent    Message?  @relation("ThreadMessages", fields: [parentId], references: [id])
-  replies   Message[] @relation("ThreadMessages")
+  channel   Channel         @relation(fields: [channelId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
+  parent    Message?        @relation("ThreadMessages", fields: [parentId], references: [id])
+  replies   Message[]       @relation("ThreadMessages")
   files     File[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  reactions EmojiReaction[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 }
 
 model DirectMessage {
@@ -62,6 +64,7 @@ model DirectMessage {
   parent     DirectMessage?  @relation("ThreadMessages", fields: [parentId], references: [id])
   replies    DirectMessage[] @relation("ThreadMessages")
   files      File[]
+  reactions  EmojiReaction[]
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 }
@@ -79,4 +82,19 @@ model File {
   dmId          String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+}
+
+model EmojiReaction {
+  id              String         @id @default(uuid())
+  emoji           String
+  userId          String
+  messageId       String?
+  directMessageId String?
+  user            User           @relation(fields: [userId], references: [id])
+  message         Message?       @relation(fields: [messageId], references: [id])
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@unique([emoji, userId, messageId])
+  @@unique([emoji, userId, directMessageId])
 }

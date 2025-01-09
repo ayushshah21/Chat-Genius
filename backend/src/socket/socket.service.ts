@@ -3,6 +3,7 @@ import { createMessage } from '../services/message.service';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import * as userService from '../services/user.service';
+import * as reactionService from '../services/reaction.service';
 
 const prisma = new PrismaClient();
 
@@ -77,9 +78,12 @@ export function setupSocketIO(server: Server) {
             try {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
 
-                // Ensure socket is in the channel room before allowing message
+                // Ensure socket is in both channel rooms before allowing message
                 if (!socket.rooms.has(data.channelId)) {
                     socket.join(data.channelId); // Auto-join if not in room
+                }
+                if (!socket.rooms.has(`channel_${data.channelId}`)) {
+                    socket.join(`channel_${data.channelId}`); // Auto-join reaction room
                 }
 
                 const message = await createMessage(
@@ -270,171 +274,465 @@ export function setupSocketIO(server: Server) {
             dmUserId?: string,
             fileId: string,
             size: number,
-            messageId: string,
+            messageId?: string,
             parentId?: string
         }) => {
             try {
-                console.log('[SocketService] Processing file_upload_complete:', {
-                    ...data,
-                    isChannel: !!data.channelId,
-                    isDM: !!data.dmUserId,
-                    isThread: !!data.parentId
-                });
+                console.log('[SocketService] Received file_upload_complete:', data);
+
+                if (!data.fileId) {
+                    console.error('[SocketService] Missing fileId in file_upload_complete event');
+                    return;
+                }
 
                 // Update file size
-                await prisma.file.update({
+                const updatedFile = await prisma.file.update({
                     where: { id: data.fileId },
-                    data: { size: data.size }
+                    data: { size: data.size },
+                    include: {
+                        message: {
+                            include: {
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                },
+                                files: true,
+                                parent: true,
+                                replies: {
+                                    include: {
+                                        user: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                email: true,
+                                                avatarUrl: true
+                                            }
+                                        },
+                                        files: true
+                                    }
+                                }
+                            }
+                        },
+                        directMessage: {
+                            include: {
+                                sender: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                },
+                                receiver: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                },
+                                files: true,
+                                parent: true,
+                                replies: {
+                                    include: {
+                                        sender: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                email: true,
+                                                avatarUrl: true
+                                            }
+                                        },
+                                        receiver: {
+                                            select: {
+                                                id: true,
+                                                name: true,
+                                                email: true,
+                                                avatarUrl: true
+                                            }
+                                        },
+                                        files: true
+                                    }
+                                }
+                            }
+                        }
+                    }
                 });
-                console.log('[SocketService] Updated file size');
 
-                if (data.channelId) {
+                if (data.channelId && updatedFile.message) {
                     // Handle channel message
-                    const message = await prisma.message.findUnique({
+                    const message = updatedFile.message;
+                    // If it's a thread reply, emit new_reply event
+                    if (message.parentId) {
+                        io.emit('new_reply', {
+                            ...message,
+                            parentMessage: message.parent
+                        });
+                    } else {
+                        // Otherwise emit to the channel
+                        io.to(data.channelId).emit('new_message', message);
+                    }
+                } else if (data.dmUserId && updatedFile.directMessage) {
+                    // Handle DM message
+                    const dm = updatedFile.directMessage;
+                    // Create a unique room ID for this DM conversation
+                    const dmRoomId = [dm.sender.id, dm.receiver.id].sort().join(':');
+                    const roomId = `dm:${dmRoomId}`;
+
+                    console.log('[SocketService] Emitting DM file update to room:', {
+                        roomId,
+                        messageId: dm.id,
+                        hasFiles: dm.files?.length > 0,
+                        isReply: !!dm.parentId
+                    });
+
+                    // If it's a thread reply, emit new_reply event
+                    if (dm.parentId && dm.parent) {
+                        io.emit('new_reply', {
+                            ...dm,
+                            parentMessage: dm.parent
+                        });
+                    } else {
+                        // Otherwise emit to the DM room
+                        io.to(roomId).emit('new_dm', dm);
+                    }
+                }
+            } catch (error) {
+                console.error('[SocketService] Error in file_upload_complete:', error);
+            }
+        });
+
+        // Add reaction to message
+        socket.on("add_reaction", async (data: { emoji: string; messageId: string; isDM: boolean }) => {
+            try {
+                console.log("[SocketService] Received add_reaction:", {
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: data.isDM,
+                    userId: socket.data.userId
+                });
+
+                // First check if message exists
+                let messageExists = false;
+                let messageDetails = null;
+                let isActuallyDM = data.isDM;  // Track the actual message type
+
+                if (data.isDM) {
+                    messageDetails = await prisma.directMessage.findUnique({
                         where: { id: data.messageId },
+                        include: {
+                            sender: { select: { id: true } },
+                            receiver: { select: { id: true } },
+                        },
+                    });
+                    console.log("[SocketService] DM lookup result:", {
+                        messageId: data.messageId,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+                    messageExists = !!messageDetails;
+                } else {
+                    messageDetails = await prisma.message.findUnique({
+                        where: { id: data.messageId },
+                        include: { channel: true },
+                    });
+                    console.log("[SocketService] Channel message lookup result:", {
+                        messageId: data.messageId,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+                    messageExists = !!messageDetails;
+                }
+
+                if (!messageExists) {
+                    // Try the opposite table as a fallback
+                    if (data.isDM) {
+                        messageDetails = await prisma.message.findUnique({
+                            where: { id: data.messageId },
+                            include: { channel: true },
+                        });
+                        if (messageDetails) isActuallyDM = false;
+                    } else {
+                        messageDetails = await prisma.directMessage.findUnique({
+                            where: { id: data.messageId },
+                            include: {
+                                sender: { select: { id: true } },
+                                receiver: { select: { id: true } },
+                            },
+                        });
+                        if (messageDetails) isActuallyDM = true;
+                    }
+                    console.log("[SocketService] Fallback lookup result:", {
+                        messageId: data.messageId,
+                        isDM: data.isDM,
+                        isActuallyDM,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+
+                    if (messageDetails) {
+                        console.log("[SocketService] Found message in opposite table than expected. Adjusting isDM flag.");
+                    }
+                }
+
+                if (!messageExists && !messageDetails) {
+                    throw new Error("Message not found");
+                }
+
+                // Add the reaction using the appropriate service method based on where we found the message
+                const reaction = await reactionService.addReaction(
+                    data.emoji,
+                    socket.data.userId,
+                    isActuallyDM ? undefined : data.messageId,
+                    isActuallyDM ? data.messageId : undefined
+                );
+
+                console.log("[SocketService] Successfully added reaction:", {
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: isActuallyDM,
+                    reactionId: reaction.id
+                });
+
+                // Emit to the appropriate room based on where we found the message
+                if (isActuallyDM && messageDetails) {
+                    const dmMessage = messageDetails as any;
+                    const dmRoomId = [dmMessage.sender.id, dmMessage.receiver.id].sort().join(':');
+
+                    // Get all reactions for this message
+                    const allReactions = await prisma.emojiReaction.findMany({
+                        where: { directMessageId: data.messageId },
                         include: {
                             user: {
                                 select: {
                                     id: true,
                                     name: true,
                                     email: true,
-                                    avatarUrl: true
-                                }
+                                    avatarUrl: true,
+                                },
                             },
-                            files: true,
-                            parent: data.parentId ? {
-                                select: {
-                                    id: true,
-                                    channelId: true,
-                                    content: true,
-                                    replies: true
-                                }
-                            } : undefined,
-                            replies: {
-                                include: {
-                                    user: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            email: true,
-                                            avatarUrl: true
-                                        }
-                                    },
-                                    files: true
-                                }
-                            }
-                        }
+                        },
                     });
 
-                    if (message) {
-                        console.log('[SocketService] Broadcasting channel message:', {
-                            messageId: message.id,
-                            content: message.content,
-                            hasFiles: message.files?.length > 0,
-                            isThreadReply: !!message.parentId,
-                            parentMessageId: message.parentId,
-                            replyCount: message.replies?.length || 0
-                        });
+                    io.to(`dm:${dmRoomId}`).emit("dm_reaction_added", {
+                        messageId: data.messageId,
+                        reactions: allReactions,
+                    });
 
-                        // If it's a thread reply, emit new_reply event
-                        if (message.parentId) {
-                            console.log('[SocketService] Broadcasting thread reply with files');
-                            io.emit('new_reply', {
-                                ...message,
-                                parentMessage: message.parent
-                            });
-                        } else {
-                            // Otherwise emit to the channel
-                            io.to(message.channelId).emit('new_message', message);
-                        }
-                    }
-                } else if (data.dmUserId) {
-                    // Handle DM message
-                    const dm = await prisma.directMessage.findUnique({
-                        where: { id: data.messageId },
+                    console.log("[SocketService] Emitting dm_reaction_added:", {
+                        messageId: data.messageId,
+                        reactionCount: allReactions.length,
+                        dmRoomId
+                    });
+                } else if (!isActuallyDM && messageDetails) {
+                    const channelMessage = messageDetails as any;
+                    const channelRoom = `channel_${channelMessage.channel.id}`;
+
+                    // Get all reactions for this message
+                    const allReactions = await prisma.emojiReaction.findMany({
+                        where: { messageId: data.messageId },
                         include: {
-                            sender: {
+                            user: {
                                 select: {
                                     id: true,
                                     name: true,
                                     email: true,
-                                    avatarUrl: true
-                                }
+                                    avatarUrl: true,
+                                },
                             },
-                            receiver: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    email: true,
-                                    avatarUrl: true
-                                }
-                            },
-                            files: true,
-                            parent: data.parentId ? {
-                                select: {
-                                    id: true,
-                                    senderId: true,
-                                    receiverId: true,
-                                    content: true,
-                                    replies: true
-                                }
-                            } : undefined,
-                            replies: {
-                                include: {
-                                    sender: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            email: true,
-                                            avatarUrl: true
-                                        }
-                                    },
-                                    receiver: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            email: true,
-                                            avatarUrl: true
-                                        }
-                                    },
-                                    files: true
-                                }
-                            }
-                        }
+                        },
                     });
 
-                    if (dm) {
-                        console.log('[SocketService] Broadcasting DM message:', {
-                            messageId: dm.id,
-                            content: dm.content,
-                            hasFiles: dm.files?.length > 0,
-                            isThreadReply: !!dm.parentId,
-                            replyCount: dm.replies?.length || 0
-                        });
+                    // Emit to the channel room with the correct format
+                    io.to(`channel_${channelMessage.channel.id}`).emit("message_reaction_added", {
+                        messageId: data.messageId,
+                        reactions: allReactions,
+                    });
 
-                        // If it's a thread reply, emit new_reply event
-                        if (dm.parentId) {
-                            console.log('[SocketService] Broadcasting thread reply for DM');
-                            io.emit('new_reply', {
-                                ...dm,
-                                parentMessage: dm.parent
-                            });
-                        } else {
-                            // Otherwise emit to the DM room
-                            const dmRoomId = [dm.senderId, dm.receiverId].sort().join(':');
-                            console.log('[SocketService] Broadcasting new_dm for file:', {
-                                dmRoomId,
-                                messageId: dm.id,
-                                hasFiles: dm.files?.length > 0,
-                                content: dm.content,
-                                replyCount: dm.replies?.length || 0
-                            });
-                            io.to(`dm:${dmRoomId}`).emit('new_dm', dm);
-                        }
-                    }
+                    console.log("[SocketService] Emitting message_reaction_added:", {
+                        messageId: data.messageId,
+                        reactionCount: allReactions.length,
+                        channelRoom: `channel_${channelMessage.channel.id}`
+                    });
                 }
             } catch (error) {
-                console.error('[SocketService] Error in file_upload_complete:', error);
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                console.error("[SocketService] Error adding reaction:", {
+                    error: errorMessage,
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: data.isDM,
+                    stack: error instanceof Error ? error.stack : undefined
+                });
+                socket.emit("error", { message: errorMessage });
+            }
+        });
+
+        // Remove reaction from message
+        socket.on("remove_reaction", async (data: { emoji: string; messageId: string; isDM: boolean }) => {
+            try {
+                console.log("[SocketService] Received remove_reaction:", {
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: data.isDM,
+                    userId: socket.data.userId
+                });
+
+                // First check if message exists
+                let messageExists = false;
+                let messageDetails = null;
+                let isActuallyDM = data.isDM;  // Track the actual message type
+
+                if (data.isDM) {
+                    messageDetails = await prisma.directMessage.findUnique({
+                        where: { id: data.messageId },
+                        include: {
+                            sender: { select: { id: true } },
+                            receiver: { select: { id: true } },
+                        },
+                    });
+                    console.log("[SocketService] DM lookup result:", {
+                        messageId: data.messageId,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+                    messageExists = !!messageDetails;
+                } else {
+                    messageDetails = await prisma.message.findUnique({
+                        where: { id: data.messageId },
+                        include: { channel: true },
+                    });
+                    console.log("[SocketService] Channel message lookup result:", {
+                        messageId: data.messageId,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+                    messageExists = !!messageDetails;
+                }
+
+                if (!messageExists) {
+                    // Try the opposite table as a fallback
+                    if (data.isDM) {
+                        messageDetails = await prisma.message.findUnique({
+                            where: { id: data.messageId },
+                            include: { channel: true },
+                        });
+                        if (messageDetails) isActuallyDM = false;
+                    } else {
+                        messageDetails = await prisma.directMessage.findUnique({
+                            where: { id: data.messageId },
+                            include: {
+                                sender: { select: { id: true } },
+                                receiver: { select: { id: true } },
+                            },
+                        });
+                        if (messageDetails) isActuallyDM = true;
+                    }
+                    console.log("[SocketService] Fallback lookup result:", {
+                        messageId: data.messageId,
+                        isDM: data.isDM,
+                        isActuallyDM,
+                        found: !!messageDetails,
+                        details: messageDetails
+                    });
+
+                    if (messageDetails) {
+                        console.log("[SocketService] Found message in opposite table than expected. Adjusting isDM flag.");
+                    }
+                }
+
+                if (!messageExists && !messageDetails) {
+                    throw new Error("Message not found");
+                }
+
+                // Remove the reaction using the appropriate service method
+                const reaction = await reactionService.removeReaction(
+                    data.emoji,
+                    socket.data.userId,
+                    isActuallyDM ? undefined : data.messageId,
+                    isActuallyDM ? data.messageId : undefined
+                );
+
+                console.log("[SocketService] Successfully removed reaction:", {
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: isActuallyDM,
+                });
+
+                // Emit to the appropriate room based on where we found the message
+                if (isActuallyDM && messageDetails) {
+                    const dmMessage = messageDetails as any;
+                    const dmRoomId = [dmMessage.sender.id, dmMessage.receiver.id].sort().join(':');
+
+                    // Get all remaining reactions for this message
+                    const allReactions = await prisma.emojiReaction.findMany({
+                        where: { directMessageId: data.messageId },
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true,
+                                },
+                            },
+                        },
+                    });
+
+                    io.to(`dm:${dmRoomId}`).emit("dm_reaction_removed", {
+                        messageId: data.messageId,
+                        reactions: allReactions,
+                    });
+
+                    console.log("[SocketService] Emitting dm_reaction_removed:", {
+                        messageId: data.messageId,
+                        reactionCount: allReactions.length,
+                        dmRoomId
+                    });
+                } else if (!isActuallyDM && messageDetails) {
+                    const channelMessage = messageDetails as any;
+                    const channelRoom = `channel_${channelMessage.channel.id}`;
+
+                    // Get all remaining reactions for this message
+                    const allReactions = await prisma.emojiReaction.findMany({
+                        where: { messageId: data.messageId },
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true,
+                                },
+                            },
+                        },
+                    });
+
+                    io.to(channelRoom).emit("message_reaction_removed", {
+                        messageId: data.messageId,
+                        reactions: allReactions,
+                    });
+
+                    console.log("[SocketService] Emitting message_reaction_removed:", {
+                        messageId: data.messageId,
+                        reactionCount: allReactions.length,
+                        channelRoom
+                    });
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                console.error("[SocketService] Error removing reaction:", {
+                    error: errorMessage,
+                    emoji: data.emoji,
+                    messageId: data.messageId,
+                    isDM: data.isDM,
+                    stack: error instanceof Error ? error.stack : undefined
+                });
+                socket.emit("error", { message: errorMessage });
             }
         });
     });

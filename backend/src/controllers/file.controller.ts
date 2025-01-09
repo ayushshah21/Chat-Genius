@@ -7,33 +7,14 @@ const prisma = new PrismaClient();
 export async function getUploadUrl(req: Request, res: Response) {
     try {
         const { fileName, fileType, channelId, dmUserId, content, parentId } = req.body;
-        console.log('[FileController] Received upload URL request:', {
-            fileName,
-            fileType,
-            channelId,
-            dmUserId,
-            content,
-            parentId,
-            userId: (req as any).userId
-        });
 
         if (!fileName || !fileType || (!channelId && !dmUserId)) {
-            console.log('[FileController] Missing required fields');
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        console.log('[FileController] Generating S3 upload URL...');
         const { url, key } = await generateUploadUrl(fileName, fileType);
-        console.log('[FileController] Generated S3 upload URL:', { url, key });
 
         // Create file record in database
-        console.log('[FileController] Creating file record with message content:', {
-            content,
-            isChannel: !!channelId,
-            isDM: !!dmUserId,
-            parentId,
-            isThread: !!parentId
-        });
         const file = await prisma.file.create({
             data: {
                 name: fileName,
@@ -64,53 +45,18 @@ export async function getUploadUrl(req: Request, res: Response) {
             },
             include: {
                 message: true,
-                directMessage: {
-                    include: {
-                        sender: {
-                            select: {
-                                id: true,
-                                name: true,
-                                email: true,
-                                avatarUrl: true
-                            }
-                        },
-                        receiver: {
-                            select: {
-                                id: true,
-                                name: true,
-                                email: true,
-                                avatarUrl: true
-                            }
-                        }
-                    }
-                }
+                directMessage: true
             }
         });
-        console.log('[FileController] Created file record with message:', {
-            fileId: file.id,
-            messageId: file.message?.id || file.directMessage?.id,
-            content: file.directMessage?.content || file.message?.content,
-            isDM: !!file.directMessage,
-            isChannel: !!file.message
-        });
 
-        const response = {
-            url,
-            key,
-            fileId: file.id,
+        // Return the file data along with the message ID
+        return res.json({
+            ...file,
             messageId: file.message?.id || file.directMessage?.id
-        };
-        res.json(response);
+        });
     } catch (error) {
-        console.error('[FileController] Error in getUploadUrl:', error);
-        if (error instanceof Error) {
-            console.error('[FileController] Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
-        }
-        res.status(500).json({ error: 'Failed to generate upload URL' });
+        console.error('[FileController] Error handling upload URL request:', error);
+        return res.status(500).json({ error: 'Failed to generate upload URL' });
     }
 }
 

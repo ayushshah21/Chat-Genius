@@ -10,6 +10,14 @@ export async function createDirectMessage(
     parentId?: string,
     fileIds?: string[]
 ) {
+    console.log('[DirectMessageService] Creating direct message:', {
+        content,
+        senderId,
+        receiverId,
+        parentId,
+        fileIds
+    });
+
     const message = await prisma.directMessage.create({
         data: {
             content,
@@ -40,6 +48,18 @@ export async function createDirectMessage(
                 }
             },
             files: true,
+            reactions: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            },
             replies: {
                 include: {
                     sender: {
@@ -57,27 +77,77 @@ export async function createDirectMessage(
                             email: true,
                             avatarUrl: true,
                         }
+                    },
+                    files: true,
+                    reactions: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     });
 
+    // Format reactions like we do for other messages
+    const formattedMessage = {
+        ...message,
+        reactions: message.reactions.reduce((acc, reaction) => {
+            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+            if (existingReaction) {
+                existingReaction.users.push(reaction.user);
+            } else {
+                acc.push({
+                    emoji: reaction.emoji,
+                    users: [reaction.user]
+                });
+            }
+            return acc;
+        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>),
+        replies: message.replies.map(reply => ({
+            ...reply,
+            reactions: reply.reactions.reduce((acc, reaction) => {
+                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                if (existingReaction) {
+                    existingReaction.users.push(reaction.user);
+                } else {
+                    acc.push({
+                        emoji: reaction.emoji,
+                        users: [reaction.user]
+                    });
+                }
+                return acc;
+            }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
+        }))
+    };
+
     // Create a unique room ID for this DM conversation
     const dmRoomId = [senderId, receiverId].sort().join(':');
 
+    console.log('[DirectMessageService] Emitting message to room:', `dm:${dmRoomId}`, {
+        messageId: formattedMessage.id,
+        reactionCount: formattedMessage.reactions.length
+    });
+
     // Emit different events based on whether it's a reply or not
     if (parentId) {
-        io.emit('new_reply', message);
+        io.emit('new_reply', formattedMessage);
     } else {
-        io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+        io.to(`dm:${dmRoomId}`).emit('new_dm', formattedMessage);
     }
 
-    return message;
+    return formattedMessage;
 }
 
 export async function getDirectMessages(userId: string, otherUserId: string) {
-    console.log(`Fetching DMs between users ${userId} and ${otherUserId}`);
+    console.log(`[DirectMessageService] Fetching DMs between users ${userId} and ${otherUserId}`);
 
     const messages = await prisma.directMessage.findMany({
         where: {
@@ -105,6 +175,18 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                 }
             },
             files: true,
+            reactions: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            },
             replies: {
                 include: {
                     sender: {
@@ -123,7 +205,19 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                             avatarUrl: true,
                         }
                     },
-                    files: true
+                    files: true,
+                    reactions: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            }
+                        }
+                    }
                 },
                 orderBy: {
                     createdAt: 'asc'
@@ -137,21 +231,50 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
         ]
     });
 
-    console.log('Messages from DB (ordered by createdAt asc):',
-        messages.map(m => ({
-            id: m.id,
-            content: m.content ? m.content.substring(0, 20) + '...' : '[no content]',
-            createdAt: m.createdAt,
-            timestamp: new Date(m.createdAt).getTime(),
-            replyCount: m.replies?.length || 0
+    // Transform reactions into the expected format for each message
+    const formattedMessages = messages.map(message => ({
+        ...message,
+        reactions: message.reactions.reduce((acc, reaction) => {
+            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+            if (existingReaction) {
+                existingReaction.users.push(reaction.user);
+            } else {
+                acc.push({
+                    emoji: reaction.emoji,
+                    users: [reaction.user]
+                });
+            }
+            return acc;
+        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>),
+        replies: message.replies.map(reply => ({
+            ...reply,
+            reactions: reply.reactions.reduce((acc, reaction) => {
+                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                if (existingReaction) {
+                    existingReaction.users.push(reaction.user);
+                } else {
+                    acc.push({
+                        emoji: reaction.emoji,
+                        users: [reaction.user]
+                    });
+                }
+                return acc;
+            }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
         }))
-    );
+    }));
 
-    return messages;
+    console.log('[DirectMessageService] Found messages:', {
+        count: formattedMessages.length,
+        messagesWithReactions: formattedMessages.filter(m => m.reactions.length > 0).length
+    });
+
+    return formattedMessages;
 }
 
 export async function getThreadMessages(messageId: string) {
-    return await prisma.directMessage.findMany({
+    console.log('[DirectMessageService] Fetching thread messages for:', messageId);
+
+    const messages = await prisma.directMessage.findMany({
         where: {
             parentId: messageId
         },
@@ -172,10 +295,46 @@ export async function getThreadMessages(messageId: string) {
                     avatarUrl: true,
                 }
             },
-            files: true
+            files: true,
+            reactions: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            }
         },
         orderBy: {
             createdAt: 'asc'
         }
     });
+
+    // Transform reactions into the expected format for each message
+    const formattedMessages = messages.map(message => ({
+        ...message,
+        reactions: message.reactions.reduce((acc, reaction) => {
+            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+            if (existingReaction) {
+                existingReaction.users.push(reaction.user);
+            } else {
+                acc.push({
+                    emoji: reaction.emoji,
+                    users: [reaction.user]
+                });
+            }
+            return acc;
+        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
+    }));
+
+    console.log('[DirectMessageService] Found thread messages:', {
+        count: formattedMessages.length,
+        messagesWithReactions: formattedMessages.filter(m => m.reactions.length > 0).length
+    });
+
+    return formattedMessages;
 } 
