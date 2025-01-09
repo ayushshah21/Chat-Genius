@@ -59,16 +59,23 @@ export async function getChannelMessages(channelId: string) {
                 }
             },
             files: true,
-            _count: {
-                select: {
-                    replies: true
+            replies: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    },
+                    files: true
                 }
             }
         },
         orderBy: {
             createdAt: 'desc'
-        },
-        take: 50
+        }
     });
 }
 

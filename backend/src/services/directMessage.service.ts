@@ -122,7 +122,8 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
                             email: true,
                             avatarUrl: true,
                         }
-                    }
+                    },
+                    files: true
                 },
                 orderBy: {
                     createdAt: 'asc'
@@ -141,7 +142,8 @@ export async function getDirectMessages(userId: string, otherUserId: string) {
             id: m.id,
             content: m.content ? m.content.substring(0, 20) + '...' : '[no content]',
             createdAt: m.createdAt,
-            timestamp: new Date(m.createdAt).getTime()
+            timestamp: new Date(m.createdAt).getTime(),
+            replyCount: m.replies?.length || 0
         }))
     );
 
@@ -169,7 +171,8 @@ export async function getThreadMessages(messageId: string) {
                     email: true,
                     avatarUrl: true,
                 }
-            }
+            },
+            files: true
         },
         orderBy: {
             createdAt: 'asc'

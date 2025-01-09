@@ -274,7 +274,12 @@ export function setupSocketIO(server: Server) {
             parentId?: string
         }) => {
             try {
-                console.log('[SocketService] Processing file_upload_complete:', data);
+                console.log('[SocketService] Processing file_upload_complete:', {
+                    ...data,
+                    isChannel: !!data.channelId,
+                    isDM: !!data.dmUserId,
+                    isThread: !!data.parentId
+                });
 
                 // Update file size
                 await prisma.file.update({
@@ -296,14 +301,50 @@ export function setupSocketIO(server: Server) {
                                     avatarUrl: true
                                 }
                             },
-                            files: true
+                            files: true,
+                            parent: data.parentId ? {
+                                select: {
+                                    id: true,
+                                    channelId: true,
+                                    content: true,
+                                    replies: true
+                                }
+                            } : undefined,
+                            replies: {
+                                include: {
+                                    user: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            email: true,
+                                            avatarUrl: true
+                                        }
+                                    },
+                                    files: true
+                                }
+                            }
                         }
                     });
 
                     if (message) {
+                        console.log('[SocketService] Broadcasting channel message:', {
+                            messageId: message.id,
+                            content: message.content,
+                            hasFiles: message.files?.length > 0,
+                            isThreadReply: !!message.parentId,
+                            parentMessageId: message.parentId,
+                            replyCount: message.replies?.length || 0
+                        });
+
+                        // If it's a thread reply, emit new_reply event
                         if (message.parentId) {
-                            io.emit('new_reply', message);
+                            console.log('[SocketService] Broadcasting thread reply with files');
+                            io.emit('new_reply', {
+                                ...message,
+                                parentMessage: message.parent
+                            });
                         } else {
+                            // Otherwise emit to the channel
                             io.to(message.channelId).emit('new_message', message);
                         }
                     }
@@ -328,21 +369,65 @@ export function setupSocketIO(server: Server) {
                                     avatarUrl: true
                                 }
                             },
-                            files: true
+                            files: true,
+                            parent: data.parentId ? {
+                                select: {
+                                    id: true,
+                                    senderId: true,
+                                    receiverId: true,
+                                    content: true,
+                                    replies: true
+                                }
+                            } : undefined,
+                            replies: {
+                                include: {
+                                    sender: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            email: true,
+                                            avatarUrl: true
+                                        }
+                                    },
+                                    receiver: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            email: true,
+                                            avatarUrl: true
+                                        }
+                                    },
+                                    files: true
+                                }
+                            }
                         }
                     });
 
                     if (dm) {
+                        console.log('[SocketService] Broadcasting DM message:', {
+                            messageId: dm.id,
+                            content: dm.content,
+                            hasFiles: dm.files?.length > 0,
+                            isThreadReply: !!dm.parentId,
+                            replyCount: dm.replies?.length || 0
+                        });
+
+                        // If it's a thread reply, emit new_reply event
                         if (dm.parentId) {
-                            console.log('[SocketService] Broadcasting new_reply for file in thread');
-                            io.emit('new_reply', dm);
+                            console.log('[SocketService] Broadcasting thread reply for DM');
+                            io.emit('new_reply', {
+                                ...dm,
+                                parentMessage: dm.parent
+                            });
                         } else {
-                            // Create a unique room ID for this DM conversation
+                            // Otherwise emit to the DM room
                             const dmRoomId = [dm.senderId, dm.receiverId].sort().join(':');
                             console.log('[SocketService] Broadcasting new_dm for file:', {
                                 dmRoomId,
                                 messageId: dm.id,
-                                hasFiles: dm.files?.length > 0
+                                hasFiles: dm.files?.length > 0,
+                                content: dm.content,
+                                replyCount: dm.replies?.length || 0
                             });
                             io.to(`dm:${dmRoomId}`).emit('new_dm', dm);
                         }

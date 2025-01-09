@@ -6,12 +6,14 @@ const prisma = new PrismaClient();
 
 export async function getUploadUrl(req: Request, res: Response) {
     try {
-        const { fileName, fileType, channelId, dmUserId } = req.body;
+        const { fileName, fileType, channelId, dmUserId, content, parentId } = req.body;
         console.log('[FileController] Received upload URL request:', {
             fileName,
             fileType,
             channelId,
             dmUserId,
+            content,
+            parentId,
             userId: (req as any).userId
         });
 
@@ -25,7 +27,13 @@ export async function getUploadUrl(req: Request, res: Response) {
         console.log('[FileController] Generated S3 upload URL:', { url, key });
 
         // Create file record in database
-        console.log('[FileController] Creating file record...');
+        console.log('[FileController] Creating file record with message content:', {
+            content,
+            isChannel: !!channelId,
+            isDM: !!dmUserId,
+            parentId,
+            isThread: !!parentId
+        });
         const file = await prisma.file.create({
             data: {
                 name: fileName,
@@ -37,27 +45,54 @@ export async function getUploadUrl(req: Request, res: Response) {
                 ...(channelId ? {
                     message: {
                         create: {
-                            content: null,
+                            content: content,
                             channelId,
                             userId: (req as any).userId,
+                            parentId // Add parentId for thread messages
                         }
                     }
                 } : {
                     directMessage: {
                         create: {
-                            content: null,
+                            content: content,
                             senderId: (req as any).userId,
                             receiverId: dmUserId,
+                            parentId // Already included for DM threads
                         }
                     }
                 })
             },
             include: {
                 message: true,
-                directMessage: true
+                directMessage: {
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        },
+                        receiver: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        }
+                    }
+                }
             }
         });
-        console.log('[FileController] Created file record:', file);
+        console.log('[FileController] Created file record with message:', {
+            fileId: file.id,
+            messageId: file.message?.id || file.directMessage?.id,
+            content: file.directMessage?.content || file.message?.content,
+            isDM: !!file.directMessage,
+            isChannel: !!file.message
+        });
 
         const response = {
             url,
