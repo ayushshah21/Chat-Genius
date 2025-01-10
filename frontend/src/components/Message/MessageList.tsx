@@ -222,12 +222,10 @@ export default function MessageList({
   useEffect(() => {
     socket.on("new_message", messageHandler);
     socket.on("new_dm", messageHandler);
-    socket.on("new_reply", replyHandler);
 
     return () => {
       socket.off("new_message", messageHandler);
       socket.off("new_dm", messageHandler);
-      socket.off("new_reply", replyHandler);
     };
   }, [isSearchResult]);
 
