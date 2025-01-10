@@ -56,7 +56,6 @@ export async function createMessage(
 }
 
 export async function getChannelMessages(channelId: string) {
-    console.log('[MessageService] Getting messages for channel:', channelId);
     try {
         const messages = await prisma.message.findMany({
             where: {
@@ -192,4 +191,66 @@ export async function getThreadMessages(parentId: string) {
             createdAt: 'asc'
         }
     });
+}
+
+export async function deleteMessage(messageId: string, userId: string): Promise<void> {
+    try {
+        // First check if the message exists and belongs to the user
+        const message = await prisma.message.findUnique({
+            where: { id: messageId },
+            include: { user: true }
+        });
+
+        if (!message) {
+            throw new Error('Message not found');
+        }
+
+        if (message.user.id !== userId) {
+            throw new Error('Unauthorized to delete this message');
+        }
+
+        // Delete the message and its associated reactions
+        await prisma.$transaction([
+            prisma.emojiReaction.deleteMany({
+                where: { messageId }
+            }),
+            prisma.message.delete({
+                where: { id: messageId }
+            })
+        ]);
+    } catch (error) {
+        console.error('[MessageService] Error deleting message:', error);
+        throw error;
+    }
+}
+
+export async function deleteDirectMessage(messageId: string, userId: string): Promise<void> {
+    try {
+        // First check if the DM exists and belongs to the user
+        const dm = await prisma.directMessage.findUnique({
+            where: { id: messageId },
+            include: { sender: true }
+        });
+
+        if (!dm) {
+            throw new Error('Direct message not found');
+        }
+
+        if (dm.sender.id !== userId) {
+            throw new Error('Unauthorized to delete this message');
+        }
+
+        // Delete the DM and its associated reactions
+        await prisma.$transaction([
+            prisma.emojiReaction.deleteMany({
+                where: { directMessageId: messageId }
+            }),
+            prisma.directMessage.delete({
+                where: { id: messageId }
+            })
+        ]);
+    } catch (error) {
+        console.error('[MessageService] Error deleting direct message:', error);
+        throw error;
+    }
 } 

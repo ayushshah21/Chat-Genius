@@ -63,7 +63,7 @@ export async function getUploadUrl(req: Request, res: Response) {
 export async function getDownloadUrl(req: Request, res: Response) {
     try {
         const { fileId } = req.params;
-        console.log('[FileController] Received download URL request for file:', fileId);
+
 
         const file = await prisma.file.findUnique({
             where: { id: fileId }
@@ -74,9 +74,7 @@ export async function getDownloadUrl(req: Request, res: Response) {
             return res.status(404).json({ error: 'File not found' });
         }
 
-        console.log('[FileController] Generating download URL for file:', file);
         const url = await generateDownloadUrl(file.key);
-        console.log('[FileController] Generated download URL:', url);
 
         res.json({ url });
     } catch (error) {
@@ -96,13 +94,11 @@ export async function updateFileMetadata(req: Request, res: Response) {
     try {
         const { fileId } = req.params;
         const { size } = req.body;
-        console.log('[FileController] Updating file metadata:', { fileId, size });
 
         const file = await prisma.file.update({
             where: { id: fileId },
             data: { size }
         });
-        console.log('[FileController] Updated file:', file);
 
         res.json(file);
     } catch (error) {

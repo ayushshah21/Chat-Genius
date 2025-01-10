@@ -10,14 +10,6 @@ export async function addReaction(
     directMessageId?: string
 ) {
     try {
-        console.log("[ReactionService] Adding reaction:", {
-            emoji,
-            userId,
-            messageId,
-            directMessageId,
-            isDM: !!directMessageId
-        });
-
         // Check if reaction already exists
         const existingReaction = await prisma.emojiReaction.findFirst({
             where: {
@@ -29,7 +21,6 @@ export async function addReaction(
         });
 
         if (existingReaction) {
-            console.log("[ReactionService] Reaction already exists:", existingReaction);
             return existingReaction;
         }
 
@@ -53,7 +44,6 @@ export async function addReaction(
             },
         });
 
-        console.log("[ReactionService] Created new reaction:", reaction);
         return reaction;
     } catch (error) {
         console.error("[ReactionService] Error adding reaction:", error);

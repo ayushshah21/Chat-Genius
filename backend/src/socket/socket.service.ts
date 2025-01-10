@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import * as userService from '../services/user.service';
 import * as reactionService from '../services/reaction.service';
+import * as messageService from '../services/message.service';
 
 const prisma = new PrismaClient();
 
@@ -18,6 +19,7 @@ export function setupSocketIO(server: Server) {
     io = server;
 
     io.on('connection', async (socket) => {
+        // Keep essential connection log
         console.log('Socket connected:', socket.id);
 
         // Handle user presence on connection
@@ -25,23 +27,17 @@ export function setupSocketIO(server: Server) {
             const token = socket.handshake.auth.token;
             if (token) {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
-                console.log(`[Presence] User ${decoded.userId} connected with socket ${socket.id}`);
 
-                // Clear any existing disconnect timeout for this user
                 if (disconnectTimeouts[decoded.userId]) {
-                    console.log(`[Presence] Clearing disconnect timeout for user ${decoded.userId}`);
                     clearTimeout(disconnectTimeouts[decoded.userId]);
                     delete disconnectTimeouts[decoded.userId];
                 }
 
-                // Only update status if user wasn't already connected
                 if (!connectedUsers.has(decoded.userId)) {
                     await userService.updateUserStatus(decoded.userId, 'online');
                 }
 
                 connectedUsers.add(decoded.userId);
-                console.log(`[Presence] Connected users:`, Array.from(connectedUsers));
-
                 socket.data.userId = decoded.userId;
             }
         } catch (error) {
@@ -51,16 +47,14 @@ export function setupSocketIO(server: Server) {
         // Join a channel
         socket.on('join_channel', (channelId: string) => {
             socket.join(channelId);
-            console.log(`User ${socket.id} joined channel ${channelId}`);
-
-            // Emit a join confirmation
+            socket.join(`channel_${channelId}`);
             socket.emit('channel_joined', channelId);
         });
 
         // Leave a channel
         socket.on('leave_channel', (channelId: string) => {
             socket.leave(channelId);
-            console.log(`User ${socket.id} left channel ${channelId}`);
+            socket.leave(`channel_${channelId}`);
         });
 
         // New message
@@ -733,6 +727,88 @@ export function setupSocketIO(server: Server) {
                     stack: error instanceof Error ? error.stack : undefined
                 });
                 socket.emit("error", { message: errorMessage });
+            }
+        });
+
+        // Delete message
+        socket.on('delete_message', async (data: { messageId: string, channelId?: string, isDM: boolean }) => {
+            try {
+                const token = socket.handshake.auth.token;
+                if (!token) {
+                    socket.emit('error', { message: 'Authentication required' });
+                    return;
+                }
+
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+
+                if (data.isDM) {
+                    const dm = await prisma.directMessage.findUnique({
+                        where: { id: data.messageId },
+                        select: {
+                            senderId: true,
+                            receiverId: true,
+                            parentId: true
+                        }
+                    });
+
+                    if (dm) {
+                        await messageService.deleteDirectMessage(data.messageId, decoded.userId);
+                        const dmRoomId = [dm.senderId, dm.receiverId].sort().join(':');
+                        const roomId = `dm:${dmRoomId}`;
+
+                        if (dm.parentId) {
+                            io.to(roomId).emit('reply_deleted', {
+                                messageId: data.messageId,
+                                parentId: dm.parentId
+                            });
+                        } else {
+                            io.to(roomId).emit('dm_deleted', {
+                                messageId: data.messageId
+                            });
+                        }
+                    }
+                } else {
+                    const message = await prisma.message.findUnique({
+                        where: { id: data.messageId },
+                        select: { parentId: true }
+                    });
+
+                    if (message && data.channelId) {
+                        await messageService.deleteMessage(data.messageId, decoded.userId);
+                        const channelRoom = `channel_${data.channelId}`;
+
+                        if (message.parentId) {
+                            io.to(data.channelId).emit('reply_deleted', {
+                                messageId: data.messageId,
+                                parentId: message.parentId
+                            });
+                            io.to(channelRoom).emit('reply_deleted', {
+                                messageId: data.messageId,
+                                parentId: message.parentId
+                            });
+                        } else {
+                            io.to(data.channelId).emit('message_deleted', {
+                                messageId: data.messageId,
+                                channelId: data.channelId
+                            });
+                            io.to(channelRoom).emit('message_deleted', {
+                                messageId: data.messageId,
+                                channelId: data.channelId
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[SocketService] Error deleting message:', {
+                    error: error instanceof Error ? error.message : error,
+                    stack: error instanceof Error ? error.stack : undefined,
+                    messageId: data.messageId,
+                    channelId: data.channelId,
+                    isDM: data.isDM
+                });
+                socket.emit('error', {
+                    message: error instanceof Error ? error.message : 'Failed to delete message'
+                });
             }
         });
     });
