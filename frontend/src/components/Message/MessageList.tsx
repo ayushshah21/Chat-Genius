@@ -188,7 +188,6 @@ export default function MessageList({
             setInitialScrollDone(true);
           }
         } else if (dmUserId) {
-          const currentUserId = localStorage.getItem("userId");
           socket.emit("join_dm", dmUserId);
 
           const response = await axiosInstance.get(
