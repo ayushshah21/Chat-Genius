@@ -9,6 +9,7 @@ import ThreadPanel from "./ThreadPanel";
 import { MessageCircle } from "lucide-react";
 import MessageInput from "./MessageInput";
 import EmojiReactions from "./EmojiReactions";
+import { DeleteButton } from "./DeleteButton";
 
 interface Props {
   channelId?: string | null;
@@ -51,102 +52,94 @@ export default function MessageList({
   const [isSearchResult, setIsSearchResult] = useState(false);
   const [hasHighlightedMessage, setHasHighlightedMessage] = useState(false);
 
-  // Add debug logging for state changes
-  useEffect(() => {
-    console.log("State Change Debug:", {
-      isSearchResult,
-      hasHighlightedMessage,
-      initialScrollDone,
-      highlightMessageId,
-      messageCount: messages.length,
-    });
-  }, [
-    isSearchResult,
-    hasHighlightedMessage,
-    initialScrollDone,
-    highlightMessageId,
-    messages,
-  ]);
+  const handleMessageDeleted = (data: {
+    messageId: string;
+    channelId: string;
+  }) => {
+    if (data.channelId === channelId) {
+      setMessages((prevMessages) => {
+        const filteredMessages = prevMessages.filter(
+          (msg) => msg.id !== data.messageId
+        );
+        return filteredMessages;
+      });
+    }
+  };
 
-  const clearSearchStates = (force = false, reason = "unspecified") => {
-    console.log("Attempting to clear search states:", {
-      force,
-      reason,
-      currentSearchState: isSearchResult,
-      currentHighlightState: hasHighlightedMessage,
+  const handleReplyDeleted = (data: {
+    messageId: string;
+    parentId: string;
+  }) => {
+    setMessages((prevMessages) => {
+      const updatedMessages = prevMessages.map((msg) => {
+        if (msg.id === data.parentId && msg.replies) {
+          const updatedReplies = msg.replies.filter(
+            (reply) => reply.id !== data.messageId
+          );
+          return {
+            ...msg,
+            replies: updatedReplies,
+          };
+        }
+        return msg;
+      });
+      return updatedMessages;
     });
+  };
 
+  const messageHandler = (message: Message) => {
+    // Only add to main list if it's not a thread reply
+    if (!message.parentId) {
+      setMessages((prev) => [message, ...prev]);
+      clearSearchStates(true);
+      scrollToBottom();
+    }
+  };
+
+  const replyHandler = (reply: Message) => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === reply.parentId
+          ? { ...msg, replies: [...(msg.replies || []), reply] }
+          : msg
+      )
+    );
+  };
+
+  const clearSearchStates = (force = false) => {
     if (force) {
-      console.log("Forcing clear of search states");
       setIsSearchResult(false);
       setHasHighlightedMessage(false);
     }
   };
 
   const scrollToBottom = () => {
-    console.log("Scroll to bottom triggered:", {
-      isSearchResult,
-      hasHighlightedMessage,
-      initialScrollDone,
-      highlightMessageId,
-    });
-
     if (!isSearchResult && !hasHighlightedMessage) {
-      console.log("Executing scroll to bottom");
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    } else {
-      console.log("Scroll to bottom prevented due to:", {
-        isSearchResult,
-        hasHighlightedMessage,
-      });
     }
   };
 
   const scrollToMessage = (messageId: string) => {
-    console.log("Scroll to message triggered:", {
-      messageId,
-      messageExists: !!messageRefs.current[messageId],
-      currentStates: {
-        isSearchResult,
-        hasHighlightedMessage,
-        initialScrollDone,
-      },
-    });
-
     const messageElement = messageRefs.current[messageId];
     if (messageElement) {
       messageElement.scrollIntoView({ behavior: "smooth", block: "center" });
       messageElement.classList.add("highlight-message");
 
-      // Log before timeout
-      console.log("Message highlighted, setting timeout");
-
       setTimeout(() => {
-        console.log("Highlight timeout completed for:", messageId);
         messageElement.classList.remove("highlight-message");
       }, 2000);
 
       setInitialScrollDone(true);
-    } else {
-      console.log("Message element not found:", messageId);
     }
   };
 
   // Update the highlightMessageId effect
   useEffect(() => {
-    console.log("HighlightMessageId effect triggered:", {
-      highlightMessageId,
-      initialScrollDone,
-      messageCount: messages.length,
-    });
-
     if (highlightMessageId) {
-      console.log("Setting search states for highlighted message");
       setIsSearchResult(true);
       setHasHighlightedMessage(true);
 
       if (!initialScrollDone) {
-        console.log("Setting up scroll to highlighted message");
         const timer = setTimeout(() => {
           scrollToMessage(highlightMessageId);
         }, 100);
@@ -157,31 +150,13 @@ export default function MessageList({
 
   // Update the messages change effect
   useEffect(() => {
-    console.log("Messages change effect triggered:", {
-      messageCount: messages.length,
-      states: {
-        highlightMessageId,
-        initialScrollDone,
-        isSearchResult,
-        hasHighlightedMessage,
-      },
-    });
-
     if (
       !highlightMessageId &&
       initialScrollDone &&
       !isSearchResult &&
       !hasHighlightedMessage
     ) {
-      console.log("Conditions met for auto-scroll");
       scrollToBottom();
-    } else {
-      console.log("Auto-scroll prevented due to:", {
-        hasHighlightMessageId: !!highlightMessageId,
-        initialScrollDone,
-        isSearchResult,
-        hasHighlightedMessage,
-      });
     }
   }, [
     messages,
@@ -193,17 +168,7 @@ export default function MessageList({
 
   // Update channel/DM change effect
   useEffect(() => {
-    console.log("Channel/DM change effect triggered:", {
-      channelId,
-      dmUserId,
-      currentStates: {
-        isSearchResult,
-        hasHighlightedMessage,
-        initialScrollDone,
-      },
-    });
-
-    clearSearchStates(true, "channel_change");
+    clearSearchStates(true);
     setInitialScrollDone(false);
   }, [channelId, dmUserId]);
 
@@ -211,6 +176,7 @@ export default function MessageList({
     const fetchMessages = async () => {
       try {
         if (channelId) {
+          // Join both the regular channel room and the formatted channel room
           socket.emit("join_channel", channelId);
           socket.emit("join_channel", `channel_${channelId}`);
 
@@ -223,7 +189,6 @@ export default function MessageList({
           }
         } else if (dmUserId) {
           const currentUserId = localStorage.getItem("userId");
-          socket.emit("join_dm", currentUserId);
           socket.emit("join_dm", dmUserId);
 
           const response = await axiosInstance.get(
@@ -245,11 +210,10 @@ export default function MessageList({
 
     return () => {
       if (channelId) {
+        // Leave both room formats
         socket.emit("leave_channel", channelId);
         socket.emit("leave_channel", `channel_${channelId}`);
       } else if (dmUserId) {
-        const currentUserId = localStorage.getItem("userId");
-        socket.emit("leave_dm", currentUserId);
         socket.emit("leave_dm", dmUserId);
       }
       setInitialScrollDone(false);
@@ -257,38 +221,6 @@ export default function MessageList({
   }, [channelId, dmUserId, highlightMessageId]);
 
   useEffect(() => {
-    const messageHandler = (message: Message) => {
-      // Only add to main list if it's not a thread reply
-      if (!message.parentId) {
-        console.log("Adding new message to main list:", {
-          messageId: message.id,
-          content: message.content,
-          hasFiles:
-            "files" in message && message.files && message.files.length > 0,
-          isThreadReply: !!message.parentId,
-        });
-        setMessages((prev) => [message, ...prev]);
-        clearSearchStates(true);
-        scrollToBottom();
-      }
-    };
-
-    const replyHandler = (reply: Message) => {
-      console.log("Handling thread reply:", {
-        replyId: reply.id,
-        parentId: reply.parentId,
-        content: reply.content,
-        hasFiles: "files" in reply && reply.files && reply.files.length > 0,
-      });
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === reply.parentId
-            ? { ...msg, replies: [...(msg.replies || []), reply] }
-            : msg
-        )
-      );
-    };
-
     socket.on("new_message", messageHandler);
     socket.on("new_dm", messageHandler);
     socket.on("new_reply", replyHandler);
@@ -300,15 +232,60 @@ export default function MessageList({
     };
   }, [isSearchResult]);
 
+  useEffect(() => {
+    if (!channelId) return;
+
+    const handleNewMessage = (message: Message) => {
+      if (!message.parentId) {
+        setMessages((prev) => {
+          // Check if message already exists
+          const exists = prev.some((m) => m.id === message.id);
+          if (exists) {
+            // Update existing message
+            return prev.map((m) => (m.id === message.id ? message : m));
+          }
+          // Add new message
+          return [...prev, message];
+        });
+      }
+    };
+
+    const handleNewReply = (reply: Message) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === reply.parentId) {
+            return {
+              ...msg,
+              replies: [...(msg.replies || []), reply],
+            };
+          }
+          return msg;
+        })
+      );
+    };
+
+    socket.on("new_message", handleNewMessage);
+    socket.on("new_reply", handleNewReply);
+    socket.on("message_deleted", handleMessageDeleted);
+    socket.on("reply_deleted", handleReplyDeleted);
+
+    return () => {
+      socket.off("new_message", handleNewMessage);
+      socket.off("new_reply", handleNewReply);
+      socket.off("message_deleted", handleMessageDeleted);
+      socket.off("reply_deleted", handleReplyDeleted);
+    };
+  }, [channelId]);
+
   if (loading) {
     return (
-      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#1A1D21]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[var(--background)]">
         {[...Array(5)].map((_, index) => (
           <div key={index} className="flex items-start space-x-3 animate-pulse">
-            <div className="w-8 h-8 bg-gray-700 rounded-full"></div>
+            <div className="w-8 h-8 bg-[var(--background-light)] rounded-full"></div>
             <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-700 rounded w-1/4"></div>
-              <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+              <div className="h-4 bg-[var(--background-light)] rounded w-1/4"></div>
+              <div className="h-4 bg-[var(--background-light)] rounded w-1/2"></div>
             </div>
           </div>
         ))}
@@ -317,7 +294,7 @@ export default function MessageList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 h-full relative flex flex-col bg-[#1A1D21]">
+    <div className="flex-1 overflow-y-auto p-4 h-full relative flex flex-col bg-[var(--background)]">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col space-y-1 min-h-0">
@@ -344,7 +321,7 @@ export default function MessageList({
 
       {/* Message Input - Only show when no thread is open */}
       {!selectedThread && (
-        <div className="pt-4 border-t border-gray-700 mt-auto">
+        <div className="pt-4 border-t border-[var(--border)] mt-auto">
           <MessageInput
             channelId={channelId}
             dmUserId={dmUserId}
@@ -371,15 +348,8 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
     const [previewErrors, setPreviewErrors] = useState<{
       [key: string]: boolean;
     }>({});
-
-    console.log("Rendering message:", {
-      messageId: message.id,
-      content: message.content,
-      hasFiles: "files" in message && message.files && message.files.length > 0,
-      files: "files" in message && message.files ? message.files : null,
-      replyCount,
-      replies: "replies" in message ? message.replies : null,
-    });
+    const currentUserId = localStorage.getItem("userId");
+    const isDM = !("user" in message);
 
     const isPreviewable = (type: string) => {
       return type.startsWith("image/"); // Remove PDF from previewable types
@@ -419,7 +389,7 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
     return (
       <div
         ref={ref}
-        className={`flex items-start space-x-3 group hover:bg-[#222529] px-2 py-1 rounded transition-colors duration-200 ${
+        className={`flex items-start space-x-3 group hover:bg-[var(--background-hover)] px-2 py-1 rounded transition-colors duration-200 ${
           isHighlighted ? "highlight-message" : ""
         }`}
       >
@@ -435,22 +405,36 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
         />
         <div className="flex-1 overflow-hidden">
           <div className="flex items-center space-x-2">
-            <span className="font-medium text-white">
+            <span className="font-medium text-[var(--text)]">
               {userInfo.name || userInfo.email}
             </span>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[var(--text-muted)]">
               {formatMessageDate(new Date(message.createdAt))}
             </span>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <DeleteButton
+                messageId={message.id}
+                channelId={
+                  "channelId" in message ? message.channelId : undefined
+                }
+                isDM={isDM}
+                isAuthor={
+                  isDM
+                    ? (message as DirectMessage).sender.id === currentUserId
+                    : (message as Message).user.id === currentUserId
+                }
+              />
+            </div>
           </div>
           {message.content && (
-            <p className="text-gray-100 break-words">{message.content}</p>
+            <p className="text-[var(--text)] break-words">{message.content}</p>
           )}
           {"files" in message && message.files && message.files.length > 0 && (
             <div className="mt-2 space-y-2">
               {message.files.map((file: FileAttachment) => (
                 <div
                   key={file.id}
-                  className="flex flex-col space-y-2 bg-[#222529] p-2 rounded"
+                  className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
                 >
                   {fileUrls[file.id] &&
                     isPreviewable(file.type) &&
@@ -466,8 +450,8 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
                     )}
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <p className="text-sm text-gray-300">{file.name}</p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-sm text-[var(--text)]">{file.name}</p>
+                      <p className="text-xs text-[var(--text-muted)]">
                         {(file.size / 1024).toFixed(1)} KB
                       </p>
                     </div>
@@ -477,7 +461,7 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
                           href={fileUrls[file.id]}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                          className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                         >
                           {file.type === "application/pdf"
                             ? "Open PDF"
@@ -488,7 +472,7 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
                         href={fileUrls[file.id]}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                        className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                         download
                       >
                         Download
@@ -507,7 +491,7 @@ const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
             />
             <button
               onClick={onThreadClick}
-              className="text-xs text-gray-400 hover:text-blue-400 flex items-center space-x-1 transition-colors duration-200"
+              className="text-xs text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1 transition-colors duration-200"
             >
               <MessageCircle className="w-3.5 h-3.5" />
               <span>

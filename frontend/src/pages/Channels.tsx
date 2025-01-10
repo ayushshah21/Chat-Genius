@@ -65,7 +65,7 @@ export default function Channels() {
       <Navbar />
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-64 bg-[#19171D] flex flex-col">
+        <div className="w-64 bg-[var(--sidebar-bg)] flex flex-col">
           {/* Channel List */}
           <div className="flex-1 overflow-y-auto">
             <ChannelList
@@ -78,7 +78,7 @@ export default function Channels() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 bg-[#1A1D21]">
+        <div className="flex-1 bg-[var(--background)]">
           <MessageList
             channelId={channelId}
             dmUserId={userId}

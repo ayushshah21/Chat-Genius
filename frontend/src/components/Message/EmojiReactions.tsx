@@ -38,31 +38,6 @@ export default function EmojiReactions({
   const pickerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Debug log for component initialization
-  useEffect(() => {
-    console.log("[EmojiReactions] Component initialized with props:", {
-      messageId,
-      isDM,
-      initialReactions,
-      currentUserId,
-    });
-  }, [messageId, isDM, initialReactions, currentUserId]);
-
-  // Debug log for props and state changes
-  useEffect(() => {
-    console.log("[EmojiReactions] Props or state changed:", {
-      messageId,
-      isDM,
-      currentReactions: reactions.length,
-      currentUserId,
-      reactionDetails: reactions.map((r) => ({
-        emoji: r.emoji,
-        userCount: r.users.length,
-        users: r.users.map((u) => u.id),
-      })),
-    });
-  }, [messageId, isDM, reactions, currentUserId]);
-
   // Update reactions when props change
   useEffect(() => {
     if (initialReactions && Array.isArray(initialReactions)) {
@@ -89,14 +64,6 @@ export default function EmojiReactions({
       reactions: EmojiReaction[];
     }) => {
       if (data.messageId === messageId) {
-        console.log("[EmojiReactions] Received reaction update:", {
-          type: isDM ? "dm_reaction_added" : "message_reaction_added",
-          messageId,
-          isDM,
-          reactionCount: data.reactions?.length || 0,
-          reactions: data.reactions,
-        });
-
         if (Array.isArray(data.reactions)) {
           const validatedReactions = data.reactions
             .filter(
@@ -122,13 +89,6 @@ export default function EmojiReactions({
                 },
               ],
             }));
-
-          console.log("[EmojiReactions] Setting validated reactions:", {
-            messageId,
-            originalCount: data.reactions.length,
-            validatedCount: validatedReactions.length,
-            reactions: validatedReactions,
-          });
 
           setReactions(validatedReactions);
         }
@@ -140,13 +100,6 @@ export default function EmojiReactions({
       reactions: EmojiReaction[];
     }) => {
       if (data.messageId === messageId) {
-        console.log("[EmojiReactions] Received reaction removal:", {
-          type: isDM ? "dm_reaction_removed" : "message_reaction_removed",
-          messageId,
-          reactionCount: data.reactions?.length || 0,
-          reactions: data.reactions,
-        });
-
         if (Array.isArray(data.reactions)) {
           const validatedReactions = data.reactions
             .filter(
@@ -172,16 +125,6 @@ export default function EmojiReactions({
                 },
               ],
             }));
-
-          console.log(
-            "[EmojiReactions] Setting validated reactions after removal:",
-            {
-              messageId,
-              originalCount: data.reactions.length,
-              validatedCount: validatedReactions.length,
-              reactions: validatedReactions,
-            }
-          );
 
           setReactions(validatedReactions);
         }
@@ -194,36 +137,17 @@ export default function EmojiReactions({
     socket.on("dm_reaction_added", handleReactionAdded);
     socket.on("dm_reaction_removed", handleReactionRemoved);
 
-    console.log("[EmojiReactions] Set up socket listeners:", {
-      messageId,
-      isDM,
-      currentReactions: reactions.length,
-    });
-
     return () => {
       socket.off("message_reaction_added", handleReactionAdded);
       socket.off("message_reaction_removed", handleReactionRemoved);
       socket.off("dm_reaction_added", handleReactionAdded);
       socket.off("dm_reaction_removed", handleReactionRemoved);
-
-      console.log("[EmojiReactions] Cleaned up socket listeners:", {
-        messageId,
-        isDM,
-      });
     };
   }, [messageId, isDM]);
 
   const handleEmojiSelect = (emoji: any) => {
     try {
       if (!currentUserId) return;
-
-      // Debug log for emoji selection
-      console.log("[EmojiReactions] Handling emoji select:", {
-        emoji: emoji.native,
-        messageId,
-        isDM,
-        currentUserId,
-      });
 
       const newUser: User = {
         id: currentUserId,
@@ -264,10 +188,6 @@ export default function EmojiReactions({
         type: isDM ? "directMessageId" : "messageId",
       };
 
-      console.log(
-        "[EmojiReactions] Emitting add_reaction with payload:",
-        payload
-      );
       socket.emit("add_reaction", payload);
     } catch (error) {
       console.error("[EmojiReactions] Error handling emoji select:", error);
@@ -287,20 +207,6 @@ export default function EmojiReactions({
       );
 
       if (hasReacted) {
-        const existingReaction = reactions.find((r) => r.emoji === emoji);
-        const totalUsers = existingReaction?.users?.length || 0;
-
-        if (process.env.NODE_ENV === "development") {
-          console.log("[EmojiReactions] Removing reaction:", {
-            emoji,
-            totalUsers,
-            currentUserId,
-            isDM,
-            messageId,
-            type: isDM ? "directMessageId" : "messageId",
-          });
-        }
-
         setReactions((prevReactions) => {
           const updatedReactions = prevReactions.map((reaction) => {
             if (reaction.emoji === emoji) {
@@ -327,22 +233,8 @@ export default function EmojiReactions({
           type: isDM ? "directMessageId" : "messageId",
         };
 
-        console.log(
-          "[EmojiReactions] Emitting remove_reaction with payload:",
-          payload
-        );
         socket.emit("remove_reaction", payload);
       } else {
-        if (process.env.NODE_ENV === "development") {
-          console.log("[EmojiReactions] Adding reaction:", {
-            emoji,
-            currentUserId,
-            isDM,
-            messageId,
-            type: isDM ? "directMessageId" : "messageId",
-          });
-        }
-
         const newUser = {
           id: currentUserId,
           name: localStorage.getItem("userName") || null,
@@ -383,10 +275,6 @@ export default function EmojiReactions({
           type: isDM ? "directMessageId" : "messageId",
         };
 
-        console.log(
-          "[EmojiReactions] Emitting add_reaction with payload:",
-          payload
-        );
         socket.emit("add_reaction", payload);
       }
     } catch (error) {
@@ -408,12 +296,6 @@ export default function EmojiReactions({
       ...reaction,
       users: reaction.users.filter((u) => u && u.id),
     }));
-
-  console.log("[EmojiReactions] Valid reactions before grouping:", {
-    validReactions,
-    count: validReactions.length,
-    originalReactions: reactions,
-  });
 
   // Group reactions by emoji
   const groupedReactions = validReactions.reduce((acc, reaction) => {
@@ -444,16 +326,6 @@ export default function EmojiReactions({
 
     return acc;
   }, [] as EmojiReaction[]);
-
-  // Debug info only in development
-  if (process.env.NODE_ENV === "development") {
-    console.log("[EmojiReactions] Reactions state:", {
-      messageId,
-      totalReactions: reactions.length,
-      validReactions: validReactions.length,
-      groupedReactions: groupedReactions.length,
-    });
-  }
 
   // Handle click outside
   useEffect(() => {

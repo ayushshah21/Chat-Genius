@@ -10,45 +10,45 @@ import { UserStatusProvider } from "./contexts/UserStatusContext";
 function App() {
   return (
     <BrowserRouter>
-      <UserStatusProvider>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/channels"
-            element={
-              <ProtectedRoute>
-                <Channels />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/channels/:channelId"
-            element={
-              <ProtectedRoute>
-                <Channels />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dm/:userId"
-            element={
-              <ProtectedRoute>
-                <Channels />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </UserStatusProvider>
+        <UserStatusProvider>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route
+              path="/channels"
+              element={
+                <ProtectedRoute>
+                  <Channels />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/channels/:channelId"
+              element={
+                <ProtectedRoute>
+                  <Channels />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dm/:userId"
+              element={
+                <ProtectedRoute>
+                  <Channels />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </UserStatusProvider>
     </BrowserRouter>
   );
 }

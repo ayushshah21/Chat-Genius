@@ -100,23 +100,23 @@ export default function ThreadPanel({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-[#1A1D21] text-white shadow-xl flex flex-col border-l border-gray-700">
+    <div className="fixed inset-y-0 right-0 w-96 bg-[var(--background)] text-[var(--text)] shadow-xl flex flex-col border-l border-[var(--border)]">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-[#222529]">
+      <div className="p-4 border-b border-[var(--border)] flex justify-between items-center bg-[var(--background-light)]">
         <div className="flex items-center space-x-2">
-          <MessageSquare className="w-5 h-5 text-gray-400" />
+          <MessageSquare className="w-5 h-5 text-[var(--text-muted)]" />
           <h3 className="text-lg font-semibold">Thread</h3>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 hover:bg-gray-700 rounded-full transition-colors duration-200"
+          className="p-1.5 hover:bg-[var(--background-hover)] rounded-full transition-colors duration-200"
         >
-          <X className="w-5 h-5 text-gray-400 hover:text-white" />
+          <X className="w-5 h-5 text-[var(--text-muted)] hover:text-[var(--text)]" />
         </button>
       </div>
 
       {/* Parent Message */}
-      <div className="p-4 border-b border-gray-700 bg-[#222529]">
+      <div className="p-4 border-b border-[var(--border)] bg-[var(--background-light)]">
         <div className="flex items-start space-x-3">
           <img
             src={
@@ -126,14 +126,14 @@ export default function ThreadPanel({
               }&background=random`
             }
             alt={userInfo.name || "User"}
-            className="w-10 h-10 rounded-full border-2 border-gray-700"
+            className="w-10 h-10 rounded-full border-2 border-[var(--border)]"
           />
           <div className="flex-1">
             <div className="flex items-center space-x-2">
-              <span className="font-medium text-white">
+              <span className="font-medium text-[var(--text)]">
                 {userInfo.name || userInfo.email}
               </span>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-[var(--text-muted)]">
                 {new Date(parentMessage.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
@@ -141,7 +141,7 @@ export default function ThreadPanel({
               </span>
             </div>
             {parentMessage.content && (
-              <p className="text-gray-100 mt-1">{parentMessage.content}</p>
+              <p className="text-[var(--text)] mt-1">{parentMessage.content}</p>
             )}
             {"files" in parentMessage &&
               parentMessage.files &&
@@ -150,7 +150,7 @@ export default function ThreadPanel({
                   {parentMessage.files.map((file) => (
                     <div
                       key={file.id}
-                      className="flex flex-col space-y-2 bg-[#1A1D21] p-2 rounded"
+                      className="flex flex-col space-y-2 bg-[var(--background)] p-2 rounded"
                     >
                       {fileUrls[file.id] &&
                         isPreviewable(file.type) &&
@@ -166,8 +166,10 @@ export default function ThreadPanel({
                         )}
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <p className="text-sm text-gray-300">{file.name}</p>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-sm text-[var(--text)]">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-[var(--text-muted)]">
                             {(file.size / 1024).toFixed(1)} KB
                           </p>
                         </div>
@@ -177,7 +179,7 @@ export default function ThreadPanel({
                               href={fileUrls[file.id]}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                              className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                             >
                               {file.type === "application/pdf"
                                 ? "Open PDF"
@@ -188,7 +190,7 @@ export default function ThreadPanel({
                             href={fileUrls[file.id]}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                            className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                             download
                           >
                             Download
@@ -204,10 +206,10 @@ export default function ThreadPanel({
       </div>
 
       {/* Replies */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#1A1D21]">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[var(--background)]">
         {loading ? (
           <div className="flex justify-center items-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--primary)]"></div>
           </div>
         ) : (
           replies.map((reply) => {
@@ -215,7 +217,7 @@ export default function ThreadPanel({
             return (
               <div
                 key={reply.id}
-                className="flex items-start space-x-3 group hover:bg-[#222529] p-2 rounded-lg transition-colors duration-200"
+                className="flex items-start space-x-3 group hover:bg-[var(--background-hover)] p-2 rounded-lg transition-colors duration-200"
               >
                 <img
                   src={
@@ -225,14 +227,14 @@ export default function ThreadPanel({
                     }&background=random`
                   }
                   alt={replyUserInfo.name || "User"}
-                  className="w-8 h-8 rounded-full border border-gray-700"
+                  className="w-8 h-8 rounded-full border border-[var(--border)]"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
-                    <span className="font-medium text-white">
+                    <span className="font-medium text-[var(--text)]">
                       {replyUserInfo.name || replyUserInfo.email}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-[var(--text-muted)]">
                       {new Date(reply.createdAt).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -240,7 +242,9 @@ export default function ThreadPanel({
                     </span>
                   </div>
                   {reply.content && (
-                    <p className="text-gray-100 break-words">{reply.content}</p>
+                    <p className="text-[var(--text)] break-words">
+                      {reply.content}
+                    </p>
                   )}
                   {"files" in reply &&
                     reply.files &&
@@ -249,7 +253,7 @@ export default function ThreadPanel({
                         {reply.files.map((file) => (
                           <div
                             key={file.id}
-                            className="flex flex-col space-y-2 bg-[#222529] p-2 rounded"
+                            className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
                           >
                             {fileUrls[file.id] &&
                               isPreviewable(file.type) &&
@@ -265,10 +269,10 @@ export default function ThreadPanel({
                               )}
                             <div className="flex items-center justify-between">
                               <div className="flex-1">
-                                <p className="text-sm text-gray-300">
+                                <p className="text-sm text-[var(--text)]">
                                   {file.name}
                                 </p>
-                                <p className="text-xs text-gray-400">
+                                <p className="text-xs text-[var(--text-muted)]">
                                   {(file.size / 1024).toFixed(1)} KB
                                 </p>
                               </div>
@@ -278,7 +282,7 @@ export default function ThreadPanel({
                                     href={fileUrls[file.id]}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                                    className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                                   >
                                     {file.type === "application/pdf"
                                       ? "Open PDF"
@@ -289,7 +293,7 @@ export default function ThreadPanel({
                                   href={fileUrls[file.id]}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="px-3 py-1 text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
+                                  className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                                   download
                                 >
                                   Download
@@ -307,19 +311,18 @@ export default function ThreadPanel({
         )}
       </div>
 
-      {/* Reply Input */}
-      <div className="p-4 border-t border-gray-700 bg-[#222529]">
+      {/* Message Input */}
+      <div className="p-4 border-t border-[var(--border)]">
         <MessageInput
+          parentId={parentMessage.id}
           channelId={
             "channelId" in parentMessage ? parentMessage.channelId : undefined
           }
           dmUserId={
-            "receiverId" in parentMessage ? parentMessage.receiverId : undefined
+            "senderId" in parentMessage ? parentMessage.senderId : undefined
           }
-          parentId={parentMessage.id}
-          placeholder="Reply in thread..."
           onMessageSent={handleMessageSent}
-          isThread={true}
+          placeholder="Reply in thread..."
         />
       </div>
     </div>

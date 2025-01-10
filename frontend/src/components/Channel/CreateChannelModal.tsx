@@ -52,44 +52,44 @@ export default function CreateChannelModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-[#1A1D21] rounded-lg shadow-xl w-full max-w-md relative">
+      <div className="bg-[var(--background)] rounded-lg shadow-xl w-full max-w-md relative">
         <div className="p-6">
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-1 hover:bg-gray-700 rounded-full transition-colors duration-200"
+            className="absolute top-4 right-4 p-1 hover:bg-[var(--background-hover)] rounded-full transition-colors duration-200"
           >
-            <X className="w-5 h-5 text-gray-400 hover:text-white" />
+            <X className="w-5 h-5 text-[var(--text-muted)] hover:text-[var(--text)]" />
           </button>
 
-          <h2 className="text-2xl font-bold mb-6 text-white">
+          <h2 className="text-2xl font-bold mb-6 text-[var(--text)]">
             Create a channel
           </h2>
 
           <form onSubmit={handleSubmit}>
             <div className="mb-6">
-              <label className="block text-gray-300 text-sm font-medium mb-2">
+              <label className="block text-[var(--text-secondary)] text-sm font-medium mb-2">
                 Channel name
               </label>
               <input
                 type="text"
                 value={channelName}
                 onChange={(e) => setChannelName(e.target.value)}
-                className="w-full px-4 py-2 bg-[#222529] text-white border border-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
+                className="w-full px-4 py-2 bg-[var(--input-bg)] text-[var(--text)] border border-[var(--border)] rounded focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent placeholder-[var(--text-muted)]"
                 placeholder="e.g. project-updates"
               />
             </div>
 
             <div className="mb-6">
-              <label className="flex items-center space-x-2 text-gray-300 text-sm font-medium">
+              <label className="flex items-center space-x-2 text-[var(--text-secondary)] text-sm font-medium">
                 <input
                   type="checkbox"
                   checked={isPrivate}
                   onChange={(e) => setIsPrivate(e.target.checked)}
-                  className="form-checkbox h-4 w-4 text-blue-500 rounded border-gray-700 bg-[#222529]"
+                  className="form-checkbox h-4 w-4 text-[var(--primary)] rounded border-[var(--border)] bg-[var(--input-bg)]"
                 />
                 <span>Make private</span>
               </label>
-              <p className="mt-1 text-sm text-gray-400">
+              <p className="mt-1 text-sm text-[var(--text-muted)]">
                 Private channels are only visible to their members
               </p>
             </div>
@@ -104,14 +104,14 @@ export default function CreateChannelModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors duration-200"
+                className="px-4 py-2 text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={!channelName.trim() || isLoading}
-                className="px-4 py-2 bg-[#007a5a] text-white rounded hover:bg-[#148567] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                className="px-4 py-2 bg-[var(--primary)] text-[var(--text)] rounded hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
                 {isLoading ? "Creating..." : "Create Channel"}
               </button>

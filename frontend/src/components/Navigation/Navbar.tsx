@@ -7,6 +7,20 @@ import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import { socket } from "../../lib/socket";
 
+const themes = {
+  default: "Default",
+  beige: "Beige",
+  dark: "Dark",
+  slack: "Slack",
+  ocean: "Ocean",
+  forest: "Forest",
+  sunset: "Sunset",
+  midnight: "Midnight",
+  coffee: "Coffee",
+  lavender: "Lavender",
+  mint: "Mint",
+};
+
 interface SearchResult {
   id: string;
   content: string;
@@ -25,6 +39,7 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [theme, setTheme] = useState("default");
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -58,6 +73,11 @@ export default function Navbar() {
       socket.disconnect();
       navigate("/login");
     }
+  };
+
+  const handleThemeChange = (newTheme: string) => {
+    setTheme(newTheme);
+    document.documentElement.setAttribute("data-theme", newTheme);
   };
 
   const handleSearch = async (query: string) => {
@@ -132,9 +152,21 @@ export default function Navbar() {
   };
 
   return (
-    <div className="h-14 bg-[#222529] border-b border-gray-700 flex items-center justify-between px-4">
-      {/* Left Side - Empty for balance */}
-      <div className="w-48"></div>
+    <div className="h-14 bg-[var(--background-light)] border-b border-[var(--border)] flex items-center justify-between px-4">
+      {/* Left Side - Theme Selector */}
+      <div className="w-48">
+        <select
+          value={theme}
+          onChange={(e) => handleThemeChange(e.target.value)}
+          className="px-2 py-1 bg-[var(--input-bg)] text-[var(--text)] border border-[var(--border)] rounded hover:border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+        >
+          {Object.entries(themes).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* Center - Search Bar */}
       <div ref={searchRef} className="flex-1 max-w-2xl mx-auto relative">
@@ -144,35 +176,35 @@ export default function Navbar() {
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search messages and channels"
-            className="w-full bg-[#1A1D21] text-white px-4 py-1.5 pl-10 rounded border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400"
+            className="w-full bg-[var(--input-bg)] text-[var(--input-text)] px-4 py-1.5 pl-10 rounded border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent placeholder-[var(--input-placeholder)]"
           />
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+          <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
         </div>
 
         {/* Search Results Dropdown */}
         {showResults && searchResults.length > 0 && (
-          <div className="absolute top-full mt-2 w-full bg-[#1A1D21] border border-gray-700 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
+          <div className="absolute top-full mt-2 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
             {searchResults.map((result) => (
               <button
                 key={result.id}
                 onClick={() => handleResultClick(result)}
-                className="w-full text-left p-3 hover:bg-[#222529] border-b border-gray-700 last:border-0"
+                className="w-full text-left p-3 hover:bg-[var(--background-hover)] border-b border-[var(--border)] last:border-0"
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-white font-medium">
+                    <p className="text-[var(--text)] font-medium">
                       {result.sender.name || result.sender.email}
                     </p>
-                    <p className="text-gray-400 text-sm mt-1">
+                    <p className="text-[var(--text-muted)] text-sm mt-1">
                       {result.content}
                     </p>
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[var(--text-muted)]">
                       {formatDate(result.createdAt)}
                     </span>
                     {result.channelName && (
-                      <span className="text-xs text-blue-400 mt-1">
+                      <span className="text-xs text-[var(--primary)] mt-1">
                         #{result.channelName}
                       </span>
                     )}
@@ -188,14 +220,14 @@ export default function Navbar() {
       <div className="w-48 flex items-center justify-end space-x-4">
         <button
           onClick={() => navigate("/profile")}
-          className="p-2 text-gray-300 hover:text-white hover:bg-[#1A1D21] rounded transition-colors duration-200"
+          className="p-2 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200"
           title="Profile"
         >
           <User className="w-5 h-5" />
         </button>
         <button
           onClick={handleLogout}
-          className="px-3 py-1.5 text-gray-300 hover:text-white hover:bg-[#1A1D21] rounded transition-colors duration-200 flex items-center space-x-2"
+          className="px-3 py-1.5 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200 flex items-center space-x-2"
         >
           <LogOut className="w-5 h-5" />
           <span>Log out</span>

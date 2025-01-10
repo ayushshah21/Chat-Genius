@@ -2,9 +2,380 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Base styles for HTML and body */
+html, body {
+  background-color: #0B1221;  /* Same as Ocean theme background */
+}
+
+/* Default theme variables applied to root element */
+:root {
+  --primary: #0EA5E9;
+  --secondary: #64748B;
+  --accent: #06B6D4;
+  --background: #0B1221;
+  --background-light: #162033;
+  --background-hover: #1E293B;
+  --text: #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --sidebar-text: #F1F5F9;
+  --sidebar-text-hover: #CBD5E1;
+  --sidebar-text-header: #F1F5F9;
+  --sidebar-text-muted: #94A3B8;
+  --border: #1E293B;
+  --input-bg: #162033;
+  --input-text: #F1F5F9;
+  --input-placeholder: #94A3B8;
+  --sidebar-bg: #0B1221;
+  --message-bg: #162033;
+  --message-hover: #1E293B;
+}
+
+/* Ocean theme (now default) */
+:root[data-theme="default"] {
+  --primary: #0EA5E9;
+  --secondary: #64748B;
+  --accent: #06B6D4;
+  --background: #0B1221;
+  --background-light: #162033;
+  --background-hover: #1E293B;
+  --text: #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --sidebar-text: #F1F5F9;
+  --sidebar-text-hover: #CBD5E1;
+  --sidebar-text-header: #F1F5F9;
+  --sidebar-text-muted: #94A3B8;
+  --border: #1E293B;
+  --input-bg: #162033;
+  --input-text: #F1F5F9;
+  --input-placeholder: #94A3B8;
+  --sidebar-bg: #0B1221;
+  --message-bg: #162033;
+  --message-hover: #1E293B;
+}
+
+/* Forest theme - green-based dark theme */
+:root[data-theme="forest"] {
+  --primary: #059669;
+  --secondary: #10B981;
+  --accent: #047857;
+  --background: #0C1912;
+  --background-light: #132A1F;
+  --background-hover: #1A3B2C;
+  --text: #ECFDF5;
+  --text-secondary: #D1FAE5;
+  --text-muted: #A7F3D0;
+  --sidebar-text: #ECFDF5;
+  --sidebar-text-hover: #D1FAE5;
+  --sidebar-text-header: #ECFDF5;
+  --sidebar-text-muted: #A7F3D0;
+  --border: #1A3B2C;
+  --input-bg: #132A1F;
+  --input-text: #ECFDF5;
+  --input-placeholder: #A7F3D0;
+  --sidebar-bg: #0C1912;
+  --message-bg: #132A1F;
+  --message-hover: #1A3B2C;
+}
+
+/* Midlight theme - darker version of light theme */
+:root[data-theme="midlight"] {
+  --primary: #2563EB;
+  --secondary: #4B5563;
+  --accent: #059669;
+  --background: #1F2937;
+  --background-light: #374151;
+  --background-hover: #4B5563;
+  --text: #F9FAFB;
+  --text-secondary: #E5E7EB;
+  --text-muted: #D1D5DB;
+  --border: #4B5563;
+  --input-bg: #374151;
+  --sidebar-bg: #1F2937;
+  --message-bg: #374151;
+  --message-hover: #4B5563;
+}
+
+/* Beige theme - darker text for better contrast */
+:root[data-theme="beige"] {
+  --primary: #8B7355;
+  --secondary: #A69887;
+  --accent: #D4C4B5;
+  --background: #F5F1EA;
+  --background-light: #EBE7E0;
+  --background-hover: #E1DDD6;
+  --text: #2D2B29;
+  --text-secondary: #4A4846;
+  --text-muted: #666461;
+  --sidebar-text: #2D2B29;
+  --sidebar-text-hover: #4A4846;
+  --sidebar-text-header: #2D2B29;
+  --sidebar-text-muted: #666461;
+  --border: #D4C4B5;
+  --input-bg: #FFFFFF;
+  --input-text: #2D2B29;
+  --input-placeholder: #666461;
+  --sidebar-bg: #F5F1EA;
+  --message-bg: #FFFFFF;
+  --message-hover: #F5F1EA;
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  --primary: #60A5FA;
+  --secondary: #9CA3AF;
+  --accent: #34D399;
+  --background: #111827;
+  --background-light: #1F2937;
+  --background-hover: #374151;
+  --text: #F9FAFB;
+  --text-secondary: #E5E7EB;
+  --text-muted: #9CA3AF;
+  --sidebar-text: #F9FAFB;
+  --sidebar-text-hover: #E5E7EB;
+  --sidebar-text-header: #F9FAFB;
+  --sidebar-text-muted: #9CA3AF;
+  --border: #374151;
+  --input-bg: #1F2937;
+  --input-text: #F9FAFB;
+  --input-placeholder: #9CA3AF;
+  --sidebar-bg: #111827;
+  --message-bg: #1F2937;
+  --message-hover: #374151;
+}
+
+/* Light theme - replaced with Slack Aubergine theme */
+:root[data-theme="slack"] {
+  --primary: #36C5F0;       /* Slack Blue - for interactive elements */
+  --secondary: #2EB67D;     /* Slack Green - for success states */
+  --accent: #E01E5A;        /* Slack Red - for important actions */
+  --background: #FFFFFF;    /* Slack White - main background */
+  --background-light: #F8F8F8; /* Slightly darker for contrast */
+  --background-hover: #F3F3F3; /* Hover state */
+  --text: #1D1C1D;          /* Slack Charcoal - primary text for chat */
+  --text-secondary: #2C2D2E; /* Slightly lighter than primary text */
+  --text-muted: #616061;    /* Muted text for less emphasis */
+  --sidebar-text: #FFFFFF;  /* White text for sidebar */
+  --sidebar-text-hover: #D1D2D3; /* Lighter text for hover states in sidebar */
+  --sidebar-text-header: #FFFFFF; /* White text for sidebar headers */
+  --sidebar-text-muted: #D1D2D3; /* Muted text for sidebar */
+  --border: #DDDDDD;        /* Light border color */
+  --input-bg: #FFFFFF;      /* White input background */
+  --input-text: #1D1C1D;    /* Dark text for inputs */
+  --input-placeholder: #616061; /* Muted text for input placeholders */
+  --sidebar-bg: #4A154B;    /* Slack Aubergine - signature sidebar color */
+  --message-bg: #FFFFFF;    /* White message background */
+  --message-hover: #F8F8F8; /* Light hover state for messages */
+}
+
+/* Sunset theme - darker text for better contrast */
+:root[data-theme="sunset"] {
+  --primary: #EA580C;
+  --secondary: #FB923C;
+  --accent: #F97316;
+  --background: #FFF7ED;
+  --background-light: #FFEDD5;
+  --background-hover: #FED7AA;
+  --text: #431407;
+  --text-secondary: #7C2D12;
+  --text-muted: #9A3412;
+  --sidebar-text: #431407;
+  --sidebar-text-hover: #7C2D12;
+  --sidebar-text-header: #431407;
+  --sidebar-text-muted: #9A3412;
+  --border: #FDBA74;
+  --input-bg: #FFFFFF;
+  --input-text: #431407;
+  --input-placeholder: #9A3412;
+  --sidebar-bg: #FFEDD5;
+  --message-bg: #FFFFFF;
+  --message-hover: #FFF7ED;
+}
+
+/* Coffee theme - darker text for better contrast */
+:root[data-theme="coffee"] {
+  --primary: #92400E;
+  --secondary: #B45309;
+  --accent: #78350F;
+  --background: #FFFBEB;
+  --background-light: #FEF3C7;
+  --background-hover: #FDE68A;
+  --text: #27150A;
+  --text-secondary: #451A03;
+  --text-muted: #78350F;
+  --sidebar-text: #27150A;
+  --sidebar-text-hover: #451A03;
+  --sidebar-text-header: #27150A;
+  --sidebar-text-muted: #78350F;
+  --border: #FCD34D;
+  --input-bg: #FFFFFF;
+  --input-text: #27150A;
+  --input-placeholder: #78350F;
+  --sidebar-bg: #FEF3C7;
+  --message-bg: #FFFFFF;
+  --message-hover: #FFFBEB;
+}
+
+/* Lavender theme - darker text for better contrast */
+:root[data-theme="lavender"] {
+  --primary: #7C3AED;
+  --secondary: #8B5CF6;
+  --accent: #6D28D9;
+  --background: #F5F3FF;
+  --background-light: #EDE9FE;
+  --background-hover: #DDD6FE;
+  --text: #3B0764;
+  --text-secondary: #4C1D95;
+  --text-muted: #5B21B6;
+  --sidebar-text: #3B0764;
+  --sidebar-text-hover: #4C1D95;
+  --sidebar-text-header: #3B0764;
+  --sidebar-text-muted: #5B21B6;
+  --border: #C4B5FD;
+  --input-bg: #FFFFFF;
+  --input-text: #3B0764;
+  --input-placeholder: #5B21B6;
+  --sidebar-bg: #EDE9FE;
+  --message-bg: #FFFFFF;
+  --message-hover: #F5F3FF;
+}
+
+/* Mint theme - darker text for better contrast */
+:root[data-theme="mint"] {
+  --primary: #059669;
+  --secondary: #10B981;
+  --accent: #047857;
+  --background: #ECFDF5;
+  --background-light: #D1FAE5;
+  --background-hover: #A7F3D0;
+  --text: #022C22;
+  --text-secondary: #064E3B;
+  --text-muted: #065F46;
+  --sidebar-text: #022C22;
+  --sidebar-text-hover: #064E3B;
+  --sidebar-text-header: #022C22;
+  --sidebar-text-muted: #065F46;
+  --border: #6EE7B7;
+  --input-bg: #FFFFFF;
+  --input-text: #022C22;
+  --input-placeholder: #065F46;
+  --sidebar-bg: #D1FAE5;
+  --message-bg: #FFFFFF;
+  --message-hover: #ECFDF5;
+}
+
+/* Midnight theme - dark blue theme */
+:root[data-theme="midnight"] {
+  --primary: #3B82F6;
+  --secondary: #60A5FA;
+  --accent: #2563EB;
+  --background: #0F172A;
+  --background-light: #1E293B;
+  --background-hover: #334155;
+  --text: #F8FAFC;
+  --text-secondary: #E2E8F0;
+  --text-muted: #94A3B8;
+  --sidebar-text: #F8FAFC;
+  --sidebar-text-hover: #E2E8F0;
+  --sidebar-text-header: #F8FAFC;
+  --sidebar-text-muted: #94A3B8;
+  --border: #334155;
+  --input-bg: #1E293B;
+  --input-text: #F8FAFC;
+  --input-placeholder: #94A3B8;
+  --sidebar-bg: #0F172A;
+  --message-bg: #1E293B;
+  --message-hover: #334155;
+}
+
+/* Apply theme variables to existing classes */
+.bg-\[\#1A1D21\] {
+  background-color: var(--background);
+}
+
+.bg-\[\#222529\] {
+  background-color: var(--background-light);
+}
+
+.text-white {
+  color: var(--text);
+}
+
+.text-gray-300 {
+  color: var(--text-secondary);
+}
+
+.text-gray-400 {
+  color: var(--text-muted);
+}
+
+.text-gray-500 {
+  color: var(--text-muted);
+}
+
+.border-gray-700 {
+  border-color: var(--border);
+}
+
+/* Message styles */
+.bg-white {
+  background-color: var(--message-bg);
+}
+
+/* Input styles */
+input, textarea {
+  background-color: var(--input-bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Hover states */
+.hover\:bg-\[\#222529\]:hover {
+  background-color: var(--background-hover);
+}
+
+.hover\:text-white:hover {
+  color: var(--text);
+}
+
+/* Sidebar styles */
+.bg-\[\#1A1D21\] {
+  background-color: var(--sidebar-bg);
+}
+
+/* Button styles */
+.bg-blue-500 {
+  background-color: var(--primary);
+}
+
+.hover\:bg-blue-600:hover {
+  background-color: var(--primary);
+  filter: brightness(90%);
+}
+
+/* Focus states */
+.focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--primary);
+}
+
+/* Accent colors */
+.text-blue-400 {
+  color: var(--accent);
+}
+
+.text-blue-600 {
+  color: var(--primary);
+}
+
+/* Animation for message highlight */
 @keyframes highlight {
   0% {
-    background-color: rgba(59, 130, 246, 0.2); /* blue-500 with opacity */
+    background-color: color-mix(in srgb, var(--primary) 20%, transparent);
   }
   100% {
     background-color: transparent;
@@ -12,5 +383,5 @@
 }
 
 .highlight-message {
-  animation: highlight 2s ease-out;
+  animation: highlight 10s ease-out;
 }

@@ -8,11 +8,11 @@ import { useParams } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 import ThreadPanel from "../Message/ThreadPanel";
 import EmojiReactions from "../Message/EmojiReactions";
+import { DeleteButton } from "../Message/DeleteButton";
 
 export default function DirectMessageChat() {
   const { userId } = useParams();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
-  const [loading, setLoading] = useState(true);
   const currentUserId = localStorage.getItem("userId");
   const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -52,48 +52,20 @@ export default function DirectMessageChat() {
     }
   };
 
+  // Add handleDelete at component level
+  const handleDelete = (messageId: string) => {
+    console.log("[DirectMessageChat] Deleting message:", messageId);
+    setMessages(messages.filter((m) => m.id !== messageId));
+  };
+
   useEffect(() => {
-    const fetchMessages = async () => {
-      if (!userId || !currentUserId) return;
+    if (!userId || !currentUserId) return;
 
-      try {
-        const response = await axiosInstance.get(
-          API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.GET(userId)
-        );
+    console.log("[DirectMessageChat] Setting up socket listeners for DM:", {
+      userId,
+      currentUserId,
+    });
 
-        // Sort messages from oldest to newest
-        const sortedMessages = response.data.sort(
-          (a: DirectMessage, b: DirectMessage) =>
-            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-
-        setMessages(sortedMessages);
-
-        // Fetch file URLs for all messages
-        await Promise.all(
-          sortedMessages.map((message: DirectMessage) => fetchFileUrls(message))
-        );
-
-        // Scroll to bottom after all files are loaded
-        scrollToBottom();
-      } catch (error) {
-        console.error("Failed to fetch DM messages:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Call the fetchMessages function
-    fetchMessages();
-
-    // Create and join DM room
-    if (userId && currentUserId) {
-      const dmRoomId = [userId, currentUserId].sort().join(":");
-      console.log("Joining DM room:", `dm:${dmRoomId}`);
-      socket.emit("join_dm", userId);
-    }
-
-    // Listen for new DMs and replies
     const handleNewMessage = async (message: DirectMessage) => {
       console.log("Received new message:", {
         messageId: message.id,
@@ -106,72 +78,111 @@ export default function DirectMessageChat() {
         (message.senderId === userId && message.receiverId === currentUserId) ||
         (message.senderId === currentUserId && message.receiverId === userId)
       ) {
-        // Fetch file URLs before adding the message
         if (message.files && message.files.length > 0) {
           await fetchFileUrls(message);
         }
 
-        // Only add to main list if it's not a thread reply
         if (!message.parentId) {
           setMessages((prev) => {
-            // Check if message already exists
             const exists = prev.some((m) => m.id === message.id);
             if (exists) {
-              // Update existing message
               return prev.map((m) => (m.id === message.id ? message : m));
             }
-            // Add new message
             return [...prev, message];
           });
-        } else {
-          // Update the parent message's replies
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.id === message.parentId) {
-                // Ensure replies array exists and add the new reply
-                const currentReplies = msg.replies || [];
-                const replyExists = currentReplies.some(
-                  (r) => r.id === message.id
-                );
-                const updatedReplies = replyExists
-                  ? currentReplies.map((r) =>
-                      r.id === message.id ? message : r
-                    )
-                  : [...currentReplies, message];
-
-                return { ...msg, replies: updatedReplies };
-              }
-              return msg;
-            })
-          );
-        }
-
-        // Scroll to bottom for new messages
-        if (!message.parentId) {
-          scrollToBottom();
         }
       }
     };
 
+    const handleDMDeleted = (data: { messageId: string; senderId: string }) => {
+      console.log("[DirectMessageChat] Received dm_deleted event:", {
+        messageId: data.messageId,
+        senderId: data.senderId,
+        currentMessages: messages.length,
+        currentUserId,
+      });
+
+      // For sender: remove immediately
+      // For receiver: only remove if we receive the socket event
+      if (data.senderId === currentUserId || socket.connected) {
+        setMessages((prevMessages) => {
+          console.log("[DirectMessageChat] Filtering messages:", {
+            messageToDelete: data.messageId,
+            beforeCount: prevMessages.length,
+            messages: prevMessages.map((m) => ({
+              id: m.id,
+              senderId: m.senderId,
+            })),
+          });
+
+          const filteredMessages = prevMessages.filter(
+            (msg) => msg.id !== data.messageId
+          );
+
+          console.log("[DirectMessageChat] After filtering:", {
+            afterCount: filteredMessages.length,
+            wasDeleted: prevMessages.length !== filteredMessages.length,
+          });
+
+          return filteredMessages;
+        });
+      }
+    };
+
+    const handleReplyDeleted = (data: {
+      messageId: string;
+      parentId: string;
+      senderId: string;
+    }) => {
+      console.log("[DirectMessageChat] Received reply_deleted event:", data);
+
+      // For sender: remove immediately
+      // For receiver: only remove if we receive the socket event
+      if (data.senderId === currentUserId || socket.connected) {
+        setMessages((prevMessages) => {
+          const updatedMessages = prevMessages.map((msg) => {
+            if (msg.id === data.parentId && msg.replies) {
+              return {
+                ...msg,
+                replies: msg.replies.filter(
+                  (reply) => reply.id !== data.messageId
+                ),
+              };
+            }
+            return msg;
+          });
+          return updatedMessages;
+        });
+      }
+    };
+
+    // Create a unique room ID for this DM conversation
+    const dmRoomId = [currentUserId, userId].sort().join(":");
+    const roomId = `dm:${dmRoomId}`;
+
+    // Join the DM room
+    socket.emit("join_dm", userId);
+    console.log("[DirectMessageChat] Joining DM room:", roomId);
+
     socket.on("new_dm", handleNewMessage);
     socket.on("new_reply", handleNewMessage);
+    socket.on("dm_deleted", handleDMDeleted);
+    socket.on("reply_deleted", handleReplyDeleted);
 
     return () => {
-      if (userId && currentUserId) {
-        const dmRoomId = [userId, currentUserId].sort().join(":");
-        console.log("Leaving DM room:", `dm:${dmRoomId}`);
-        socket.emit("leave_dm", userId);
-      }
+      console.log("[DirectMessageChat] Cleaning up socket listeners");
       socket.off("new_dm", handleNewMessage);
       socket.off("new_reply", handleNewMessage);
+      socket.off("dm_deleted", handleDMDeleted);
+      socket.off("reply_deleted", handleReplyDeleted);
+
+      // Leave the DM room
+      socket.emit("leave_dm", userId);
+      console.log("[DirectMessageChat] Leaving DM room:", roomId);
     };
   }, [userId, currentUserId]);
 
   if (!userId) return null;
-
-  if (loading) {
-    return <div>Loading messages...</div>;
-  }
 
   return (
     <div className="flex flex-col h-full">
@@ -185,7 +196,7 @@ export default function DirectMessageChat() {
                 : "justify-start"
             }`}
           >
-            <div className="max-w-[70%] bg-white rounded-lg shadow p-3">
+            <div className="max-w-[70%] bg-[var(--message-bg)] rounded-lg shadow p-3 group">
               <div className="flex items-center space-x-2 mb-1">
                 <img
                   src={
@@ -197,27 +208,37 @@ export default function DirectMessageChat() {
                   alt={message.sender.name || "User"}
                   className="w-6 h-6 rounded-full"
                 />
-                <span className="text-sm font-medium">
+                <span className="text-sm font-medium text-[var(--text)]">
                   {message.sender.name || message.sender.email}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-[var(--text-muted)]">
                   {new Date(message.createdAt).toLocaleTimeString()}
                 </span>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <DeleteButton
+                    messageId={message.id}
+                    isDM={true}
+                    isAuthor={message.sender.id === currentUserId}
+                    onDelete={() => handleDelete(message.id)}
+                  />
+                </div>
               </div>
               {message.content && (
-                <p className="text-sm text-gray-800">{message.content}</p>
+                <p className="text-sm text-[var(--text)]">{message.content}</p>
               )}
               {message.files && message.files.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {message.files.map((file) => (
                     <div
                       key={file.id}
-                      className="flex flex-col space-y-2 bg-gray-100 p-2 rounded"
+                      className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <p className="text-sm text-gray-700">{file.name}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-sm text-[var(--text)]">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-[var(--text-muted)]">
                             {(file.size / 1024).toFixed(1)} KB
                           </p>
                         </div>
@@ -226,7 +247,7 @@ export default function DirectMessageChat() {
                             href={fileUrls[file.id]}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-1 text-sm text-blue-600 hover:text-blue-500"
+                            className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110"
                             download
                           >
                             Download
@@ -248,7 +269,7 @@ export default function DirectMessageChat() {
                 />
                 <button
                   onClick={() => setSelectedThread(message)}
-                  className="text-xs text-gray-500 hover:text-blue-600 flex items-center space-x-1"
+                  className="text-xs text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1"
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
                   <span>
