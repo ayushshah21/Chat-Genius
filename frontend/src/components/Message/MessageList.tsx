@@ -96,15 +96,15 @@ export default function MessageList({
     }
   };
 
-  const replyHandler = (reply: Message) => {
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === reply.parentId
-          ? { ...msg, replies: [...(msg.replies || []), reply] }
-          : msg
-      )
-    );
-  };
+  // const replyHandler = (reply: Message) => {
+  //   setMessages((prev) =>
+  //     prev.map((msg) =>
+  //       msg.id === reply.parentId
+  //         ? { ...msg, replies: [...(msg.replies || []), reply] }
+  //         : msg
+  //     )
+  //   );
+  // };
 
   const clearSearchStates = (force = false) => {
     if (force) {
