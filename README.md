@@ -4,7 +4,7 @@ ChatGenius is a modern real-time chat application built with React, Node.js, and
 
 ## 🌐 Live Demo
 
-Access the live application at: [https://chat-genius.onrender.com](https://chat-genius.onrender.com)
+Access the live application at: ([https://chat-genius-pied.vercel.app/](https://chat-genius-pied.vercel.app/))
 
 ## 🚀 Deployment Information
 
