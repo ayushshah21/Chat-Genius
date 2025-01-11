@@ -18,49 +18,23 @@ export async function createDirectMessage(
         fileIds
     });
 
-    const message = await prisma.directMessage.create({
-        data: {
-            content,
-            senderId,
-            receiverId,
-            parentId,
-            ...(fileIds && {
-                files: {
-                    connect: fileIds.map(id => ({ id }))
-                }
-            })
-        },
-        include: {
-            sender: {
-                select: {
-                    id: true,
-                    name: true,
-                    email: true,
-                    avatarUrl: true,
-                }
-            },
-            receiver: {
-                select: {
-                    id: true,
-                    name: true,
-                    email: true,
-                    avatarUrl: true,
-                }
-            },
-            files: true,
-            reactions: {
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true
+    // Create the message and get parent info in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+        let parentMessage = null;
+        if (parentId) {
+            // First create the reply
+            const message = await tx.directMessage.create({
+                data: {
+                    content,
+                    senderId,
+                    receiverId,
+                    parentId,
+                    ...(fileIds && {
+                        files: {
+                            connect: fileIds.map(id => ({ id }))
                         }
-                    }
-                }
-            },
-            replies: {
+                    })
+                },
                 include: {
                     sender: {
                         select: {
@@ -92,14 +66,104 @@ export async function createDirectMessage(
                         }
                     }
                 }
-            }
+            });
+
+            // Then get the updated parent message with its new reply count
+            parentMessage = await tx.directMessage.findUnique({
+                where: { id: parentId },
+                include: {
+                    sender: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    },
+                    receiver: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    },
+                    files: true,
+                    reactions: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            }
+                        }
+                    },
+                    _count: {
+                        select: { replies: true }
+                    }
+                }
+            });
+
+            return { message, parentMessage };
         }
+
+        // If not a reply, create a regular message
+        const message = await tx.directMessage.create({
+            data: {
+                content,
+                senderId,
+                receiverId,
+                ...(fileIds && {
+                    files: {
+                        connect: fileIds.map(id => ({ id }))
+                    }
+                })
+            },
+            include: {
+                sender: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        avatarUrl: true,
+                    }
+                },
+                receiver: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        avatarUrl: true,
+                    }
+                },
+                files: true,
+                reactions: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        return { message, parentMessage };
     });
+
+    const { message, parentMessage } = result;
 
     // Format reactions like we do for other messages
     const formattedMessage = {
         ...message,
-        reactions: message.reactions.reduce((acc, reaction) => {
+        reactions: message.reactions.reduce((acc: Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>, reaction) => {
             const existingReaction = acc.find(r => r.emoji === reaction.emoji);
             if (existingReaction) {
                 existingReaction.users.push(reaction.user);
@@ -110,22 +174,7 @@ export async function createDirectMessage(
                 });
             }
             return acc;
-        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>),
-        replies: message.replies.map(reply => ({
-            ...reply,
-            reactions: reply.reactions.reduce((acc, reaction) => {
-                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
-                if (existingReaction) {
-                    existingReaction.users.push(reaction.user);
-                } else {
-                    acc.push({
-                        emoji: reaction.emoji,
-                        users: [reaction.user]
-                    });
-                }
-                return acc;
-            }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
-        }))
+        }, [])
     };
 
     // Create a unique room ID for this DM conversation
@@ -133,12 +182,26 @@ export async function createDirectMessage(
 
     console.log('[DirectMessageService] Emitting message to room:', `dm:${dmRoomId}`, {
         messageId: formattedMessage.id,
-        reactionCount: formattedMessage.reactions.length
+        reactionCount: formattedMessage.reactions.length,
+        isReply: !!parentId,
+        parentReplyCount: parentMessage?._count?.replies
     });
 
     // Emit different events based on whether it's a reply or not
-    if (parentId) {
-        io.emit('new_reply', formattedMessage);
+    if (parentId && parentMessage) {
+        console.log('[DirectMessageService] Emitting new_reply event with test count:', {
+            messageId: formattedMessage.id,
+            parentId: parentId,
+            testReplyCount: 999
+        });
+
+        io.emit('new_reply', {
+            reply: formattedMessage,
+            parentMessage: {
+                ...parentMessage,
+                replyCount: parentMessage._count.replies
+            }
+        });
     } else {
         io.to(`dm:${dmRoomId}`).emit('new_dm', formattedMessage);
     }
