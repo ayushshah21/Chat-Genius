@@ -21,6 +21,7 @@ export interface DirectMessage {
         avatarUrl: string | null;
     };
     replies?: DirectMessage[];
+    replyCount?: number;
     files?: FileAttachment[];
     reactions?: EmojiReaction[];
 } 

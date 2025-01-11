@@ -94,6 +94,101 @@ export default function DirectMessageChat() {
       }
     };
 
+    const handleNewReply = (data: {
+      reply: DirectMessage;
+      parentMessage: DirectMessage & { replyCount: number };
+    }) => {
+      console.log("[DirectMessageChat] Received new_reply event:", {
+        replyId: data.reply.id,
+        parentId: data.reply.parentId,
+        senderId: data.reply.senderId,
+        receiverId: data.reply.receiverId,
+        currentUserId,
+        otherUserId: userId,
+        parentReplyCount: data.parentMessage.replyCount,
+        testValue:
+          data.parentMessage.replyCount === 999
+            ? "TEST VALUE RECEIVED"
+            : "NOT TEST VALUE",
+      });
+
+      // Check if this reply belongs to our DM conversation
+      const isRelevantDM =
+        (data.reply.senderId === currentUserId &&
+          data.reply.receiverId === userId) ||
+        (data.reply.senderId === userId &&
+          data.reply.receiverId === currentUserId);
+
+      console.log("[DirectMessageChat] Reply relevance check:", {
+        isRelevantDM,
+        conditions: {
+          senderIsCurrentUser: data.reply.senderId === currentUserId,
+          receiverIsOtherUser: data.reply.receiverId === userId,
+          senderIsOtherUser: data.reply.senderId === userId,
+          receiverIsCurrentUser: data.reply.receiverId === currentUserId,
+        },
+      });
+
+      if (isRelevantDM) {
+        setMessages((prev) => {
+          console.log("[DirectMessageChat] Current messages before update:", {
+            messageCount: prev.length,
+            messages: prev.map((m) => ({
+              id: m.id,
+              replyCount: m.replies?.length || 0,
+              isParent: m.id === data.reply.parentId,
+            })),
+          });
+
+          const updated = prev.map((m) => {
+            if (m.id === data.reply.parentId) {
+              console.log("[DirectMessageChat] Updating parent message:", {
+                parentId: m.id,
+                currentReplies: m.replies?.length || 0,
+                newReplyId: data.reply.id,
+                receivedReplyCount: data.parentMessage.replyCount,
+                isTestValue: data.parentMessage.replyCount === 999,
+              });
+
+              // Create updated message with new reply count
+              const updatedMessage = {
+                ...m,
+                replies: [...(m.replies || []), data.reply],
+                replyCount: data.parentMessage.replyCount,
+              };
+
+              console.log("[DirectMessageChat] Updated parent message:", {
+                parentId: updatedMessage.id,
+                newReplyCount: updatedMessage.replyCount,
+                replyArrayLength: updatedMessage.replies.length,
+                isTestValue: updatedMessage.replyCount === 999,
+              });
+
+              return updatedMessage;
+            }
+            return m;
+          });
+
+          console.log("[DirectMessageChat] Messages after update:", {
+            messageCount: updated.length,
+            messages: updated.map((m) => ({
+              id: m.id,
+              replyCount: m.replies?.length || 0,
+              displayedReplyCount: m.replyCount,
+              isParent: m.id === data.reply.parentId,
+              isTestValue: m.replyCount === 999,
+            })),
+          });
+
+          return updated;
+        });
+      } else {
+        console.log(
+          "[DirectMessageChat] Ignoring reply - not relevant to this DM conversation"
+        );
+      }
+    };
+
     const handleDMDeleted = (data: { messageId: string; senderId: string }) => {
       console.log("[DirectMessageChat] Received dm_deleted event:", {
         messageId: data.messageId,
@@ -165,14 +260,14 @@ export default function DirectMessageChat() {
     console.log("[DirectMessageChat] Joining DM room:", roomId);
 
     socket.on("new_dm", handleNewMessage);
-    socket.on("new_reply", handleNewMessage);
+    socket.on("new_reply", handleNewReply);
     socket.on("dm_deleted", handleDMDeleted);
     socket.on("reply_deleted", handleReplyDeleted);
 
     return () => {
       console.log("[DirectMessageChat] Cleaning up socket listeners");
       socket.off("new_dm", handleNewMessage);
-      socket.off("new_reply", handleNewMessage);
+      socket.off("new_reply", handleNewReply);
       socket.off("dm_deleted", handleDMDeleted);
       socket.off("reply_deleted", handleReplyDeleted);
 

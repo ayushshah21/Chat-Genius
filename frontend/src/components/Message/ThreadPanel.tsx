@@ -319,7 +319,11 @@ export default function ThreadPanel({
             "channelId" in parentMessage ? parentMessage.channelId : undefined
           }
           dmUserId={
-            "senderId" in parentMessage ? parentMessage.senderId : undefined
+            "senderId" in parentMessage
+              ? parentMessage.senderId === localStorage.getItem("userId")
+                ? parentMessage.receiverId
+                : parentMessage.senderId
+              : undefined
           }
           onMessageSent={handleMessageSent}
           placeholder="Reply in thread..."

@@ -324,6 +324,7 @@ export default function MessageInput({
           }
         } else {
           // Send text-only DM
+          console.log(message + " " + dmUserId + " " + parentId);
           socket.emit("send_dm", {
             content: message,
             receiverId: dmUserId,
