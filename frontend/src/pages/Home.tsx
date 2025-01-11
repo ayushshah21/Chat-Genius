@@ -111,7 +111,7 @@ export default function Home() {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden py-20 sm:py-32">
+      <section className="relative overflow-hidden py-20 sm:py-32 border-b border-[var(--border)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="relative z-10 lg:w-full lg:max-w-2xl">
             <div className="text-center sm:text-left">
@@ -141,7 +141,7 @@ export default function Home() {
       </section>
 
       {/* Features Section */}
-      <section className="py-20 bg-[var(--background)]">
+      <section className="py-20 bg-[var(--background)] border-b border-[var(--border)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-base font-semibold text-[var(--primary)] tracking-wide uppercase">
@@ -247,7 +247,7 @@ export default function Home() {
       </section>
 
       {/* CTA Section */}
-      <section className="bg-blue-600 py-20">
+      <section className="text-[var(--primary)] py-20 border-t border-[var(--border)] bg-[var(--background-light)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mx-auto text-center">
             <h2 className="text-3xl font-extrabold text-white sm:text-4xl lg:text-5xl">
@@ -261,7 +261,7 @@ export default function Home() {
             <div className="mt-10">
               <Link
                 to="/register"
-                className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-full text-blue-600 bg-white hover:bg-blue-50 md:py-4 md:text-lg md:px-10 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-lg"
+                className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-full text-slate-50 bg-blue-600 hover:bg-blue-700 md:py-4 md:text-lg md:px-10 transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-lg"
               >
                 Get started
                 <ArrowRight className="ml-2 h-5 w-5" />
