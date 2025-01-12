@@ -22,6 +22,7 @@ export async function getUploadUrl(req: Request, res: Response) {
                 type: fileType,
                 size: 0, // Will be updated after upload
                 key: key, // Store only the key
+                url: uploadUrl, // Add the url field
                 user: {
                     connect: { id: (req as any).userId }
                 },
