@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useState, useRef } from "react";
-import { Message, FileAttachment } from "../../types/message";
+import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
@@ -332,11 +332,7 @@ export default function MessageList({
   );
 }
 
-interface MessageItemProps {
-  message: Message | DirectMessage;
-  onThreadClick: () => void;
-  isHighlighted?: boolean;
-}
+
 
 const MessageItem = React.forwardRef<
   HTMLDivElement,
