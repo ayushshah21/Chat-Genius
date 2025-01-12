@@ -50,14 +50,20 @@ exports.leaveChannel = leaveChannel;
 const channelService = __importStar(require("../services/channel.service"));
 function createChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { name, type, memberIds } = req.body;
-        const userId = req.userId; // From auth middleware
         try {
-            const channel = yield channelService.createChannel(name, type, userId, memberIds);
-            res.status(201).json(channel);
+            const { name, type, memberIds } = req.body;
+            const userId = req.userId;
+            const channel = yield channelService.createChannel({
+                name,
+                type,
+                userId,
+                memberIds
+            });
+            res.json(channel);
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
+            console.error('Error creating channel:', error);
+            res.status(500).json({ error: 'Failed to create channel' });
         }
     });
 }

@@ -20,7 +20,11 @@ export async function searchMessages(query: string, userId: string) {
                 {
                     OR: [
                         { type: "PUBLIC" },
-                        { isPrivate: false }
+                        {
+                            members: {
+                                some: { id: userId }
+                            }
+                        }
                     ]
                 }
             ]

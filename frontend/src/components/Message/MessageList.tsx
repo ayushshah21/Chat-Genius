@@ -302,6 +302,8 @@ export default function MessageList({
               onThreadClick={() => setSelectedThread(message)}
               ref={(el) => (messageRefs.current[message.id] = el)}
               isHighlighted={message.id === highlightMessageId}
+              channelId={channelId}
+              dmUserId={dmUserId}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -336,170 +338,172 @@ interface MessageItemProps {
   isHighlighted?: boolean;
 }
 
-const MessageItem = React.forwardRef<HTMLDivElement, MessageItemProps>(
-  ({ message, onThreadClick, isHighlighted }, ref) => {
-    const userInfo = "user" in message ? message.user : message.sender;
-    const replyCount =
-      "replies" in message && message.replies ? message.replies.length : 0;
-    const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
-    const [previewErrors, setPreviewErrors] = useState<{
-      [key: string]: boolean;
-    }>({});
-    const currentUserId = localStorage.getItem("userId");
-    const isDM = !("user" in message);
+const MessageItem = React.forwardRef<
+  HTMLDivElement,
+  {
+    message: Message | DirectMessage;
+    onThreadClick: () => void;
+    isHighlighted?: boolean;
+    channelId?: string | null;
+    dmUserId?: string | null;
+  }
+>(({ message, onThreadClick, isHighlighted, channelId, dmUserId }, ref) => {
+  const userInfo = "user" in message ? message.user : message.sender;
+  const currentUserId = localStorage.getItem("userId");
+  const isDM = !("user" in message);
+  const replyCount = message.replies?.length || 0;
+  const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
+  const [previewErrors, setPreviewErrors] = useState<{
+    [key: string]: boolean;
+  }>({});
 
-    const isPreviewable = (type: string) => {
-      return type.startsWith("image/"); // Remove PDF from previewable types
-    };
+  const isPreviewable = (type: string) => {
+    return type.startsWith("image/");
+  };
 
-    const handlePreviewError = (fileId: string) => {
-      setPreviewErrors((prev) => ({ ...prev, [fileId]: true }));
-    };
+  const handlePreviewError = (fileId: string) => {
+    setPreviewErrors((prev) => ({ ...prev, [fileId]: true }));
+  };
 
-    useEffect(() => {
-      const fetchFileUrls = async () => {
-        if ("files" in message && message.files && message.files.length > 0) {
-          const urls: { [key: string]: string } = {};
-          for (const file of message.files) {
-            try {
-              const response = await axiosInstance.get(
-                API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
-              );
-              urls[file.id] = response.data.url;
-            } catch (error) {
-              console.error(
-                "Failed to get download URL for file:",
-                file.id,
-                error
-              );
-            }
-          }
-          setFileUrls(urls);
+  // Function to fetch file URLs for a message
+  const fetchFileUrlsForMessage = async () => {
+    if ("files" in message && message.files && message.files.length > 0) {
+      const urls: { [key: string]: string } = {};
+      for (const file of message.files) {
+        try {
+          const response = await axiosInstance.get(
+            API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
+          );
+          urls[file.id] = response.data.downloadUrl;
+        } catch (error) {
+          console.error("Failed to get download URL for file:", file.id, error);
         }
-      };
+      }
+      setFileUrls(urls);
+    }
+  };
 
-      fetchFileUrls();
-    }, [message]);
+  useEffect(() => {
+    fetchFileUrlsForMessage();
+  }, [message.files]);
 
-    if (!userInfo) return null;
+  if (!userInfo) return null;
 
-    return (
-      <div
-        ref={ref}
-        className={`flex items-start space-x-3 group hover:bg-[var(--background-hover)] px-2 py-1 rounded transition-colors duration-200 ${
-          isHighlighted ? "highlight-message" : ""
-        }`}
-      >
-        <img
-          src={
-            userInfo.avatarUrl ||
-            `https://ui-avatars.com/api/?name=${
-              userInfo.name || "User"
-            }&background=random`
-          }
-          alt={userInfo.name || "User"}
-          className="w-8 h-8 rounded-full"
-        />
-        <div className="flex-1 overflow-hidden">
-          <div className="flex items-center space-x-2">
-            <span className="font-medium text-[var(--text)]">
-              {userInfo.name || userInfo.email}
-            </span>
-            <span className="text-xs text-[var(--text-muted)]">
-              {formatMessageDate(new Date(message.createdAt))}
-            </span>
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <DeleteButton
-                messageId={message.id}
-                channelId={
-                  "channelId" in message ? message.channelId : undefined
-                }
-                isDM={isDM}
-                isAuthor={
-                  isDM
-                    ? (message as DirectMessage).sender.id === currentUserId
-                    : (message as Message).user.id === currentUserId
-                }
-              />
-            </div>
+  return (
+    <div
+      ref={ref}
+      className={`flex items-start space-x-3 group hover:bg-[var(--background-hover)] px-2 py-1 rounded transition-colors duration-200 ${
+        isHighlighted ? "highlight-message" : ""
+      }`}
+    >
+      <img
+        src={
+          userInfo.avatarUrl ||
+          `https://ui-avatars.com/api/?name=${
+            userInfo.name || "User"
+          }&background=random`
+        }
+        alt={userInfo.name || "User"}
+        className="w-8 h-8 rounded-full"
+      />
+      <div className="flex-1 overflow-hidden">
+        <div className="flex items-center space-x-2">
+          <span className="font-medium text-[var(--text)]">
+            {userInfo.name || userInfo.email}
+          </span>
+          <span className="text-xs text-[var(--text-muted)]">
+            {formatMessageDate(new Date(message.createdAt))}
+          </span>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <DeleteButton
+              messageId={message.id}
+              channelId={"channelId" in message ? message.channelId : undefined}
+              dmUserId={
+                isDM ? (message as DirectMessage).receiverId : undefined
+              }
+              isAuthor={
+                isDM
+                  ? (message as DirectMessage).sender.id === currentUserId
+                  : (message as Message).user.id === currentUserId
+              }
+            />
           </div>
-          {message.content && (
-            <p className="text-[var(--text)] break-words">{message.content}</p>
-          )}
-          {"files" in message && message.files && message.files.length > 0 && (
-            <div className="mt-2 space-y-2">
-              {message.files.map((file: FileAttachment) => (
-                <div
-                  key={file.id}
-                  className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
-                >
-                  {fileUrls[file.id] &&
-                    isPreviewable(file.type) &&
-                    !previewErrors[file.id] && (
-                      <div className="max-w-md">
-                        <img
-                          src={fileUrls[file.id]}
-                          alt={file.name}
-                          className="rounded-md max-h-96 object-contain"
-                          onError={() => handlePreviewError(file.id)}
-                        />
-                      </div>
-                    )}
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm text-[var(--text)]">{file.name}</p>
-                      <p className="text-xs text-[var(--text-muted)]">
-                        {(file.size / 1024).toFixed(1)} KB
-                      </p>
+        </div>
+        {message.content && (
+          <p className="text-sm text-[var(--text)]">{message.content}</p>
+        )}
+        {message.files && message.files.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {message.files.map((file) => (
+              <div
+                key={file.id}
+                className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
+              >
+                {fileUrls[file.id] &&
+                  isPreviewable(file.type) &&
+                  !previewErrors[file.id] && (
+                    <div className="max-w-md">
+                      <img
+                        src={fileUrls[file.id]}
+                        alt={file.name}
+                        className="rounded-md max-h-96 object-contain"
+                        onError={() => handlePreviewError(file.id)}
+                      />
                     </div>
-                    <div className="flex space-x-2">
-                      {fileUrls[file.id] && (
-                        <a
-                          href={fileUrls[file.id]}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
-                        >
-                          {file.type === "application/pdf"
-                            ? "Open PDF"
-                            : "View"}
-                        </a>
-                      )}
+                  )}
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm text-[var(--text)]">{file.name}</p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      {(file.size / 1024).toFixed(1)} KB
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    {fileUrls[file.id] && (
                       <a
                         href={fileUrls[file.id]}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
-                        download
                       >
-                        Download
+                        {file.type === "application/pdf" ? "Open PDF" : "View"}
                       </a>
-                    </div>
+                    )}
+                    <a
+                      href={fileUrls[file.id]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
+                      download
+                    >
+                      Download
+                    </a>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-          <div className="mt-2 flex items-center space-x-4">
-            <EmojiReactions
-              messageId={message.id}
-              isDM={false}
-              reactions={message.reactions || []}
-            />
-            <button
-              onClick={onThreadClick}
-              className="text-xs text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1 transition-colors duration-200"
-            >
-              <MessageCircle className="w-3.5 h-3.5" />
-              <span>
-                {replyCount > 0
-                  ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
-                  : "Reply"}
-              </span>
-            </button>
+              </div>
+            ))}
           </div>
+        )}
+        <div className="mt-2 flex items-center space-x-4">
+          <EmojiReactions
+            messageId={message.id}
+            channelId={channelId || undefined}
+            dmUserId={dmUserId || undefined}
+            reactions={message.reactions || []}
+          />
+          <button
+            onClick={onThreadClick}
+            className="text-xs text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1 transition-colors duration-200"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span>
+              {replyCount > 0
+                ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`
+                : "Reply"}
+            </span>
+          </button>
         </div>
       </div>
-    );
-  }
-);
+    </div>
+  );
+});

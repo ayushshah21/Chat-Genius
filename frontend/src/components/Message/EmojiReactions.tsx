@@ -23,13 +23,15 @@ interface EmojiReaction {
 
 interface Props {
   messageId: string;
-  isDM?: boolean;
+  channelId?: string;
+  dmUserId?: string;
   reactions: EmojiReaction[];
 }
 
 export default function EmojiReactions({
   messageId,
-  isDM = false,
+  channelId,
+  dmUserId,
   reactions: initialReactions = [],
 }: Props) {
   const [showPicker, setShowPicker] = useState(false);
@@ -143,7 +145,7 @@ export default function EmojiReactions({
       socket.off("dm_reaction_added", handleReactionAdded);
       socket.off("dm_reaction_removed", handleReactionRemoved);
     };
-  }, [messageId, isDM]);
+  }, [messageId, channelId, dmUserId]);
 
   const handleEmojiSelect = (emoji: any) => {
     try {
@@ -184,8 +186,8 @@ export default function EmojiReactions({
       const payload = {
         emoji: emoji.native,
         messageId,
-        isDM,
-        type: isDM ? "directMessageId" : "messageId",
+        channelId,
+        dmUserId,
       };
 
       socket.emit("add_reaction", payload);
@@ -229,8 +231,8 @@ export default function EmojiReactions({
         const payload = {
           emoji,
           messageId,
-          isDM,
-          type: isDM ? "directMessageId" : "messageId",
+          channelId,
+          dmUserId,
         };
 
         socket.emit("remove_reaction", payload);
@@ -271,8 +273,8 @@ export default function EmojiReactions({
         const payload = {
           emoji,
           messageId,
-          isDM,
-          type: isDM ? "directMessageId" : "messageId",
+          channelId,
+          dmUserId,
         };
 
         socket.emit("add_reaction", payload);

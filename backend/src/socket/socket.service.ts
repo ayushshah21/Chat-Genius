@@ -1,10 +1,14 @@
 import { Server } from 'socket.io';
+import { createServer } from 'http';
+import express from 'express';
 import { createMessage } from '../services/message.service';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import * as userService from '../services/user.service';
 import * as reactionService from '../services/reaction.service';
 import * as messageService from '../services/message.service';
+import { aiService } from '../services/ai.service';
+import { contextService } from '../services/context.service';
 
 const prisma = new PrismaClient();
 
@@ -13,7 +17,30 @@ const disconnectTimeouts: Record<string, NodeJS.Timeout> = {};
 const connectedUsers: Set<string> = new Set();
 const OFFLINE_TIMEOUT = 10000; // 10 seconds
 
-export let io: Server;
+// Keep track of suggestion requests to implement rate limiting
+const suggestionRequests: Record<string, number> = {};
+const SUGGESTION_LIMIT = 5; // Maximum suggestions per minute
+const SUGGESTION_WINDOW = 60000; // 1 minute window
+
+let io: Server;
+
+export function getIO() {
+    return io;
+}
+
+export function initializeIO() {
+    const app = express();
+    const httpServer = createServer(app);
+
+    io = new Server(httpServer, {
+        cors: {
+            origin: '*',
+            methods: ['GET', 'POST']
+        }
+    });
+
+    return io;
+}
 
 export function setupSocketIO(server: Server) {
     io = server;
@@ -61,6 +88,7 @@ export function setupSocketIO(server: Server) {
         socket.on('send_message', async (data: {
             content: string | null;
             channelId: string;
+            dmUserId?: string;
             parentId?: string;
         }) => {
             const token = socket.handshake.auth.token;
@@ -279,7 +307,7 @@ export function setupSocketIO(server: Server) {
                     return;
                 }
 
-                // Update file size
+                // Update file size and fetch related data
                 const updatedFile = await prisma.file.update({
                     where: { id: data.fileId },
                     data: { size: data.size },
@@ -294,6 +322,7 @@ export function setupSocketIO(server: Server) {
                                         avatarUrl: true
                                     }
                                 },
+                                channel: true,
                                 files: true,
                                 parent: true,
                                 replies: {
@@ -311,7 +340,7 @@ export function setupSocketIO(server: Server) {
                                 }
                             }
                         },
-                        directMessage: {
+                        dm: {
                             include: {
                                 sender: {
                                     select: {
@@ -357,23 +386,21 @@ export function setupSocketIO(server: Server) {
                     }
                 });
 
+                // Handle channel message
                 if (data.channelId && updatedFile.message) {
-                    // Handle channel message
                     const message = updatedFile.message;
-                    // If it's a thread reply, emit new_reply event
                     if (message.parentId) {
                         io.emit('new_reply', {
                             ...message,
                             parentMessage: message.parent
                         });
                     } else {
-                        // Otherwise emit to the channel
                         io.to(data.channelId).emit('new_message', message);
                     }
-                } else if (data.dmUserId && updatedFile.directMessage) {
-                    // Handle DM message
-                    const dm = updatedFile.directMessage;
-                    // Create a unique room ID for this DM conversation
+                }
+                // Handle DM message
+                else if (data.dmUserId && updatedFile.dm) {
+                    const dm = updatedFile.dm;
                     const dmRoomId = [dm.sender.id, dm.receiver.id].sort().join(':');
                     const roomId = `dm:${dmRoomId}`;
 
@@ -384,14 +411,12 @@ export function setupSocketIO(server: Server) {
                         isReply: !!dm.parentId
                     });
 
-                    // If it's a thread reply, emit new_reply event
                     if (dm.parentId && dm.parent) {
                         io.emit('new_reply', {
                             ...dm,
                             parentMessage: dm.parent
                         });
                     } else {
-                        // Otherwise emit to the DM room
                         io.to(roomId).emit('new_dm', dm);
                     }
                 }
@@ -401,21 +426,31 @@ export function setupSocketIO(server: Server) {
         });
 
         // Add reaction to message
-        socket.on("add_reaction", async (data: { emoji: string; messageId: string; isDM: boolean }) => {
+        socket.on("add_reaction", async (data: {
+            emoji: string;
+            messageId: string;
+            channelId?: string;
+            dmUserId?: string;
+        }) => {
             try {
-                console.log("[SocketService] Received add_reaction:", {
+                console.log("[SocketService] Adding reaction:", {
                     emoji: data.emoji,
                     messageId: data.messageId,
-                    isDM: data.isDM,
-                    userId: socket.data.userId
+                    channelId: data.channelId,
+                    dmUserId: data.dmUserId
                 });
+
+                const userId = socket.data.userId;
+                if (!userId) {
+                    throw new Error('User not authenticated');
+                }
 
                 // First check if message exists
                 let messageExists = false;
                 let messageDetails = null;
-                let isActuallyDM = data.isDM;  // Track the actual message type
+                let isActuallyDM = !!data.dmUserId;  // Track the actual message type
 
-                if (data.isDM) {
+                if (data.dmUserId) {
                     messageDetails = await prisma.directMessage.findUnique({
                         where: { id: data.messageId },
                         include: {
@@ -423,83 +458,34 @@ export function setupSocketIO(server: Server) {
                             receiver: { select: { id: true } },
                         },
                     });
-                    console.log("[SocketService] DM lookup result:", {
-                        messageId: data.messageId,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
                     messageExists = !!messageDetails;
                 } else {
                     messageDetails = await prisma.message.findUnique({
                         where: { id: data.messageId },
                         include: { channel: true },
                     });
-                    console.log("[SocketService] Channel message lookup result:", {
-                        messageId: data.messageId,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
                     messageExists = !!messageDetails;
                 }
 
                 if (!messageExists) {
-                    // Try the opposite table as a fallback
-                    if (data.isDM) {
-                        messageDetails = await prisma.message.findUnique({
-                            where: { id: data.messageId },
-                            include: { channel: true },
-                        });
-                        if (messageDetails) isActuallyDM = false;
-                    } else {
-                        messageDetails = await prisma.directMessage.findUnique({
-                            where: { id: data.messageId },
-                            include: {
-                                sender: { select: { id: true } },
-                                receiver: { select: { id: true } },
-                            },
-                        });
-                        if (messageDetails) isActuallyDM = true;
-                    }
-                    console.log("[SocketService] Fallback lookup result:", {
-                        messageId: data.messageId,
-                        isDM: data.isDM,
-                        isActuallyDM,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
-
-                    if (messageDetails) {
-                        console.log("[SocketService] Found message in opposite table than expected. Adjusting isDM flag.");
-                    }
+                    throw new Error('Message not found');
                 }
 
-                if (!messageExists && !messageDetails) {
-                    throw new Error("Message not found");
-                }
-
-                // Add the reaction using the appropriate service method based on where we found the message
-                const reaction = await reactionService.addReaction(
+                // Add the reaction
+                await reactionService.addReaction(
                     data.emoji,
-                    socket.data.userId,
+                    userId,
                     isActuallyDM ? undefined : data.messageId,
                     isActuallyDM ? data.messageId : undefined
                 );
 
-                console.log("[SocketService] Successfully added reaction:", {
-                    emoji: data.emoji,
-                    messageId: data.messageId,
-                    isDM: isActuallyDM,
-                    reactionId: reaction.id
-                });
-
-                // Emit to the appropriate room based on where we found the message
                 if (isActuallyDM && messageDetails) {
                     const dmMessage = messageDetails as any;
                     const dmRoomId = [dmMessage.sender.id, dmMessage.receiver.id].sort().join(':');
 
                     // Get all reactions for this message
                     const allReactions = await prisma.emojiReaction.findMany({
-                        where: { directMessageId: data.messageId },
+                        where: { dmId: data.messageId },
                         include: {
                             user: {
                                 select: {
@@ -515,12 +501,6 @@ export function setupSocketIO(server: Server) {
                     io.to(`dm:${dmRoomId}`).emit("dm_reaction_added", {
                         messageId: data.messageId,
                         reactions: allReactions,
-                    });
-
-                    console.log("[SocketService] Emitting dm_reaction_added:", {
-                        messageId: data.messageId,
-                        reactionCount: allReactions.length,
-                        dmRoomId
                     });
                 } else if (!isActuallyDM && messageDetails) {
                     const channelMessage = messageDetails as any;
@@ -541,16 +521,9 @@ export function setupSocketIO(server: Server) {
                         },
                     });
 
-                    // Emit to the channel room with the correct format
-                    io.to(`channel_${channelMessage.channel.id}`).emit("message_reaction_added", {
+                    io.to(channelRoom).emit("message_reaction_added", {
                         messageId: data.messageId,
                         reactions: allReactions,
-                    });
-
-                    console.log("[SocketService] Emitting message_reaction_added:", {
-                        messageId: data.messageId,
-                        reactionCount: allReactions.length,
-                        channelRoom: `channel_${channelMessage.channel.id}`
                     });
                 }
             } catch (error) {
@@ -559,7 +532,7 @@ export function setupSocketIO(server: Server) {
                     error: errorMessage,
                     emoji: data.emoji,
                     messageId: data.messageId,
-                    isDM: data.isDM,
+                    dmUserId: data.dmUserId,
                     stack: error instanceof Error ? error.stack : undefined
                 });
                 socket.emit("error", { message: errorMessage });
@@ -567,21 +540,31 @@ export function setupSocketIO(server: Server) {
         });
 
         // Remove reaction from message
-        socket.on("remove_reaction", async (data: { emoji: string; messageId: string; isDM: boolean }) => {
+        socket.on("remove_reaction", async (data: {
+            emoji: string;
+            messageId: string;
+            channelId?: string;
+            dmUserId?: string;
+        }) => {
             try {
-                console.log("[SocketService] Received remove_reaction:", {
+                console.log("[SocketService] Removing reaction:", {
                     emoji: data.emoji,
                     messageId: data.messageId,
-                    isDM: data.isDM,
-                    userId: socket.data.userId
+                    channelId: data.channelId,
+                    dmUserId: data.dmUserId
                 });
+
+                const userId = socket.data.userId;
+                if (!userId) {
+                    throw new Error('User not authenticated');
+                }
 
                 // First check if message exists
                 let messageExists = false;
                 let messageDetails = null;
-                let isActuallyDM = data.isDM;  // Track the actual message type
+                let isActuallyDM = !!data.dmUserId;  // Track the actual message type
 
-                if (data.isDM) {
+                if (data.dmUserId) {
                     messageDetails = await prisma.directMessage.findUnique({
                         where: { id: data.messageId },
                         include: {
@@ -589,82 +572,34 @@ export function setupSocketIO(server: Server) {
                             receiver: { select: { id: true } },
                         },
                     });
-                    console.log("[SocketService] DM lookup result:", {
-                        messageId: data.messageId,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
                     messageExists = !!messageDetails;
                 } else {
                     messageDetails = await prisma.message.findUnique({
                         where: { id: data.messageId },
                         include: { channel: true },
                     });
-                    console.log("[SocketService] Channel message lookup result:", {
-                        messageId: data.messageId,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
                     messageExists = !!messageDetails;
                 }
 
                 if (!messageExists) {
-                    // Try the opposite table as a fallback
-                    if (data.isDM) {
-                        messageDetails = await prisma.message.findUnique({
-                            where: { id: data.messageId },
-                            include: { channel: true },
-                        });
-                        if (messageDetails) isActuallyDM = false;
-                    } else {
-                        messageDetails = await prisma.directMessage.findUnique({
-                            where: { id: data.messageId },
-                            include: {
-                                sender: { select: { id: true } },
-                                receiver: { select: { id: true } },
-                            },
-                        });
-                        if (messageDetails) isActuallyDM = true;
-                    }
-                    console.log("[SocketService] Fallback lookup result:", {
-                        messageId: data.messageId,
-                        isDM: data.isDM,
-                        isActuallyDM,
-                        found: !!messageDetails,
-                        details: messageDetails
-                    });
-
-                    if (messageDetails) {
-                        console.log("[SocketService] Found message in opposite table than expected. Adjusting isDM flag.");
-                    }
+                    throw new Error('Message not found');
                 }
 
-                if (!messageExists && !messageDetails) {
-                    throw new Error("Message not found");
-                }
-
-                // Remove the reaction using the appropriate service method
-                const reaction = await reactionService.removeReaction(
+                // Remove the reaction
+                await reactionService.removeReaction(
                     data.emoji,
-                    socket.data.userId,
+                    userId,
                     isActuallyDM ? undefined : data.messageId,
                     isActuallyDM ? data.messageId : undefined
                 );
 
-                console.log("[SocketService] Successfully removed reaction:", {
-                    emoji: data.emoji,
-                    messageId: data.messageId,
-                    isDM: isActuallyDM,
-                });
-
-                // Emit to the appropriate room based on where we found the message
                 if (isActuallyDM && messageDetails) {
                     const dmMessage = messageDetails as any;
                     const dmRoomId = [dmMessage.sender.id, dmMessage.receiver.id].sort().join(':');
 
                     // Get all remaining reactions for this message
                     const allReactions = await prisma.emojiReaction.findMany({
-                        where: { directMessageId: data.messageId },
+                        where: { dmId: data.messageId },
                         include: {
                             user: {
                                 select: {
@@ -680,12 +615,6 @@ export function setupSocketIO(server: Server) {
                     io.to(`dm:${dmRoomId}`).emit("dm_reaction_removed", {
                         messageId: data.messageId,
                         reactions: allReactions,
-                    });
-
-                    console.log("[SocketService] Emitting dm_reaction_removed:", {
-                        messageId: data.messageId,
-                        reactionCount: allReactions.length,
-                        dmRoomId
                     });
                 } else if (!isActuallyDM && messageDetails) {
                     const channelMessage = messageDetails as any;
@@ -710,12 +639,6 @@ export function setupSocketIO(server: Server) {
                         messageId: data.messageId,
                         reactions: allReactions,
                     });
-
-                    console.log("[SocketService] Emitting message_reaction_removed:", {
-                        messageId: data.messageId,
-                        reactionCount: allReactions.length,
-                        channelRoom
-                    });
                 }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -723,7 +646,7 @@ export function setupSocketIO(server: Server) {
                     error: errorMessage,
                     emoji: data.emoji,
                     messageId: data.messageId,
-                    isDM: data.isDM,
+                    dmUserId: data.dmUserId,
                     stack: error instanceof Error ? error.stack : undefined
                 });
                 socket.emit("error", { message: errorMessage });
@@ -731,83 +654,208 @@ export function setupSocketIO(server: Server) {
         });
 
         // Delete message
-        socket.on('delete_message', async (data: { messageId: string, channelId?: string, isDM: boolean }) => {
+        socket.on('delete_message', async (data: {
+            messageId: string,
+            channelId?: string,
+            dmUserId?: string
+        }) => {
             try {
-                const token = socket.handshake.auth.token;
-                if (!token) {
-                    socket.emit('error', { message: 'Authentication required' });
-                    return;
+                const userId = socket.data.userId;
+                if (!userId) {
+                    throw new Error('User not authenticated');
                 }
 
-                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                const isActuallyDM = !!data.dmUserId;
 
-                if (data.isDM) {
-                    const dm = await prisma.directMessage.findUnique({
+                if (isActuallyDM) {
+                    const message = await prisma.directMessage.findUnique({
                         where: { id: data.messageId },
-                        select: {
-                            senderId: true,
-                            receiverId: true,
-                            parentId: true
+                        include: {
+                            sender: true,
+                            receiver: true
                         }
                     });
 
-                    if (dm) {
-                        await messageService.deleteDirectMessage(data.messageId, decoded.userId);
-                        const dmRoomId = [dm.senderId, dm.receiverId].sort().join(':');
-                        const roomId = `dm:${dmRoomId}`;
-
-                        if (dm.parentId) {
-                            io.to(roomId).emit('reply_deleted', {
-                                messageId: data.messageId,
-                                parentId: dm.parentId
-                            });
-                        } else {
-                            io.to(roomId).emit('dm_deleted', {
-                                messageId: data.messageId
-                            });
-                        }
+                    if (!message) {
+                        throw new Error('Message not found');
                     }
+
+                    if (message.senderId !== userId) {
+                        throw new Error('Not authorized to delete this message');
+                    }
+
+                    await prisma.directMessage.delete({
+                        where: { id: data.messageId }
+                    });
+
+                    const dmRoomId = [message.sender.id, message.receiver.id].sort().join(':');
+                    io.to(`dm:${dmRoomId}`).emit('message_deleted', {
+                        messageId: data.messageId
+                    });
                 } else {
                     const message = await prisma.message.findUnique({
                         where: { id: data.messageId },
-                        select: { parentId: true }
+                        include: {
+                            user: true,
+                            channel: true
+                        }
                     });
 
-                    if (message && data.channelId) {
-                        await messageService.deleteMessage(data.messageId, decoded.userId);
-                        const channelRoom = `channel_${data.channelId}`;
-
-                        if (message.parentId) {
-                            io.to(data.channelId).emit('reply_deleted', {
-                                messageId: data.messageId,
-                                parentId: message.parentId
-                            });
-                            io.to(channelRoom).emit('reply_deleted', {
-                                messageId: data.messageId,
-                                parentId: message.parentId
-                            });
-                        } else {
-                            io.to(data.channelId).emit('message_deleted', {
-                                messageId: data.messageId,
-                                channelId: data.channelId
-                            });
-                            io.to(channelRoom).emit('message_deleted', {
-                                messageId: data.messageId,
-                                channelId: data.channelId
-                            });
-                        }
+                    if (!message) {
+                        throw new Error('Message not found');
                     }
+
+                    if (message.userId !== userId) {
+                        throw new Error('Not authorized to delete this message');
+                    }
+
+                    await prisma.message.delete({
+                        where: { id: data.messageId }
+                    });
+
+                    io.to(`channel_${message.channel.id}`).emit('message_deleted', {
+                        messageId: data.messageId
+                    });
                 }
             } catch (error) {
-                console.error('[SocketService] Error deleting message:', {
-                    error: error instanceof Error ? error.message : error,
-                    stack: error instanceof Error ? error.stack : undefined,
-                    messageId: data.messageId,
-                    channelId: data.channelId,
-                    isDM: data.isDM
-                });
+                console.error('[SocketService] Error deleting message:', error);
                 socket.emit('error', {
                     message: error instanceof Error ? error.message : 'Failed to delete message'
+                });
+            }
+        });
+
+        // AI suggestion request handler
+        socket.on('ai_suggestion_request', async (data: {
+            channelId?: string;
+            dmUserId?: string;
+            content: string;
+        }) => {
+            const token = socket.handshake.auth.token;
+            if (!token) {
+                socket.emit('suggestion_error', { error: 'Authentication required' });
+                return;
+            }
+
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+
+                // Implement basic rate limiting
+                const now = Date.now();
+                const userRequests = suggestionRequests[decoded.userId] || 0;
+                if (userRequests >= SUGGESTION_LIMIT) {
+                    socket.emit('suggestion_error', {
+                        error: 'Rate limit exceeded. Please wait before requesting more suggestions.'
+                    });
+                    return;
+                }
+                suggestionRequests[decoded.userId] = userRequests + 1;
+                setTimeout(() => {
+                    suggestionRequests[decoded.userId]--;
+                }, SUGGESTION_WINDOW);
+
+                // Get recent context
+                const contextId = data.channelId || data.dmUserId;
+                if (!contextId) {
+                    throw new Error('Either channelId or dmUserId must be provided');
+                }
+                const contextType = data.channelId ? 'channel' : 'dm';
+                const context = await contextService.getChatContext(contextId, contextType);
+
+                // Get user's style preferences
+                const user = await prisma.user.findUnique({
+                    where: { id: decoded.userId },
+                    select: {
+                        name: true,
+                        communicationStyle: true,
+                        commonPhrases: true
+                    }
+                });
+
+                if (!user) {
+                    throw new Error('User not found');
+                }
+
+                // Generate suggestion
+                const suggestion = await aiService.generatePersonalityResponse(
+                    data.content,
+                    user.communicationStyle || 'professional',
+                    context.join('\n')
+                );
+
+                // Send suggestion back to user
+                socket.emit('ai_suggestion', {
+                    suggestion,
+                    originalContent: data.content
+                });
+
+            } catch (error) {
+                console.error('Error generating AI suggestion:', error);
+                socket.emit('suggestion_error', {
+                    error: 'Failed to generate suggestion'
+                });
+            }
+        });
+
+        // AI message suggestion handler
+        socket.on('request_ai_suggestion', async (data: {
+            channelId?: string,
+            dmUserId?: string,
+            messageContent?: string,
+            parentId?: string
+        }) => {
+            try {
+                console.log('[SocketService] Received AI suggestion request:', {
+                    channelId: data.channelId,
+                    dmUserId: data.dmUserId,
+                    hasContent: !!data.messageContent,
+                    parentId: data.parentId
+                });
+
+                const userId = socket.data.userId;
+                if (!userId) {
+                    throw new Error('User not authenticated');
+                }
+
+                // Get recent context
+                const contextId = data.channelId || data.dmUserId;
+                if (!contextId) {
+                    throw new Error('Either channelId or dmUserId must be provided');
+                }
+                const contextType = data.channelId ? 'channel' : 'dm';
+                const context = await contextService.getChatContext(contextId, contextType);
+                const contextSummary = Array.isArray(context) && context.length > 0 ? context[0] : '';
+
+                // Rate limit check
+                const now = Date.now();
+                const userRequests = suggestionRequests[userId] || 0;
+                if (userRequests >= SUGGESTION_LIMIT) {
+                    throw new Error('Rate limit exceeded. Please wait before requesting more suggestions.');
+                }
+                suggestionRequests[userId] = (suggestionRequests[userId] || 0) + 1;
+                setTimeout(() => {
+                    suggestionRequests[userId]--;
+                }, SUGGESTION_WINDOW);
+
+                // Generate suggestion
+                const suggestion = await aiService.generatePersonalityResponse(
+                    data.messageContent || '',
+                    contextSummary
+                );
+
+                // Emit suggestion back to user
+                socket.emit('ai_suggestion', {
+                    suggestion,
+                    messageContent: data.messageContent,
+                    channelId: data.channelId,
+                    dmUserId: data.dmUserId,
+                    parentId: data.parentId
+                });
+
+            } catch (error) {
+                console.error('[SocketService] Error generating AI suggestion:', error);
+                socket.emit('error', {
+                    message: error instanceof Error ? error.message : 'Failed to generate AI suggestion'
                 });
             }
         });

@@ -1,32 +1,28 @@
 import { PrismaClient, Channel } from "@prisma/client";
-import { io } from '../socket/socket.service';
+import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
-export async function createChannel(
-    name: string,
-    type: "PUBLIC" | "PRIVATE",
-    createdById: string,
-    memberIds: string[] = []
-) {
+export async function createChannel(data: any) {
     const channel = await prisma.channel.create({
         data: {
-            name,
-            type,
-            createdBy: createdById,
+            name: data.name,
+            type: data.type || 'PUBLIC',
+            creator: {
+                connect: { id: data.userId }
+            },
             members: {
-                connect: [...memberIds, createdById].map(id => ({ id }))
+                connect: [{ id: data.userId }]
             }
         },
         include: {
-            members: true,
-            creator: true
+            creator: true,
+            members: true
         }
     });
 
-    // Emit the new channel to all connected clients
-    console.log('Channel Service: Broadcasting new channel:', channel.name);
-    io.emit('new_channel', channel);
+    // Emit socket event for new channel
+    getIO().emit('new_channel', channel);
 
     return channel;
 }

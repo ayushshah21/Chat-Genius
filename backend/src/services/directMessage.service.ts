@@ -1,212 +1,43 @@
 import { PrismaClient } from "@prisma/client";
-import { io } from '../socket/socket.service';
+import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
-export async function createDirectMessage(
-    content: string,
-    senderId: string,
-    receiverId: string,
-    parentId?: string,
-    fileIds?: string[]
-) {
-    console.log('[DirectMessageService] Creating direct message:', {
-        content,
-        senderId,
-        receiverId,
-        parentId,
-        fileIds
-    });
+function getDMRoomId(senderId: string, receiverId: string): string {
+    return [senderId, receiverId].sort().join(':');
+}
 
-    // Create the message and get parent info in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-        let parentMessage = null;
-        if (parentId) {
-            // First create the reply
-            const message = await tx.directMessage.create({
-                data: {
-                    content,
-                    senderId,
-                    receiverId,
-                    parentId,
-                    ...(fileIds && {
-                        files: {
-                            connect: fileIds.map(id => ({ id }))
-                        }
-                    })
-                },
-                include: {
-                    sender: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true,
-                        }
-                    },
-                    receiver: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true,
-                        }
-                    },
-                    files: true,
-                    reactions: {
-                        include: {
-                            user: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    email: true,
-                                    avatarUrl: true
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Then get the updated parent message with its new reply count
-            parentMessage = await tx.directMessage.findUnique({
-                where: { id: parentId },
-                include: {
-                    sender: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true,
-                        }
-                    },
-                    receiver: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                            avatarUrl: true,
-                        }
-                    },
-                    files: true,
-                    reactions: {
-                        include: {
-                            user: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    email: true,
-                                    avatarUrl: true
-                                }
-                            }
-                        }
-                    },
-                    _count: {
-                        select: { replies: true }
-                    }
-                }
-            });
-
-            return { message, parentMessage };
-        }
-
-        // If not a reply, create a regular message
-        const message = await tx.directMessage.create({
-            data: {
-                content,
-                senderId,
-                receiverId,
-                ...(fileIds && {
-                    files: {
-                        connect: fileIds.map(id => ({ id }))
-                    }
-                })
+export async function createDirectMessage(data: any) {
+    const message = await prisma.directMessage.create({
+        data: {
+            content: data.content,
+            sender: {
+                connect: { id: data.senderId }
             },
-            include: {
-                sender: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        avatarUrl: true,
-                    }
-                },
-                receiver: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        avatarUrl: true,
-                    }
-                },
-                files: true,
-                reactions: {
-                    include: {
-                        user: {
-                            select: {
-                                id: true,
-                                name: true,
-                                email: true,
-                                avatarUrl: true
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        return { message, parentMessage };
+            receiver: {
+                connect: { id: data.receiverId }
+            },
+            parentId: data.parentId
+        },
+        include: {
+            sender: true,
+            receiver: true,
+            parent: true
+        }
     });
 
-    const { message, parentMessage } = result;
+    const dmRoomId = getDMRoomId(data.senderId, data.receiverId);
 
-    // Format reactions like we do for other messages
-    const formattedMessage = {
-        ...message,
-        reactions: message.reactions.reduce((acc: Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>, reaction) => {
-            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
-            if (existingReaction) {
-                existingReaction.users.push(reaction.user);
-            } else {
-                acc.push({
-                    emoji: reaction.emoji,
-                    users: [reaction.user]
-                });
-            }
-            return acc;
-        }, [])
-    };
-
-    // Create a unique room ID for this DM conversation
-    const dmRoomId = [senderId, receiverId].sort().join(':');
-
-    console.log('[DirectMessageService] Emitting message to room:', `dm:${dmRoomId}`, {
-        messageId: formattedMessage.id,
-        reactionCount: formattedMessage.reactions.length,
-        isReply: !!parentId,
-        parentReplyCount: parentMessage?._count?.replies
-    });
-
-    // Emit different events based on whether it's a reply or not
-    if (parentId && parentMessage) {
-        console.log('[DirectMessageService] Emitting new_reply event with test count:', {
-            messageId: formattedMessage.id,
-            parentId: parentId,
-            testReplyCount: 999
-        });
-
-        io.emit('new_reply', {
-            reply: formattedMessage,
-            parentMessage: {
-                ...parentMessage,
-                replyCount: parentMessage._count.replies
-            }
+    if (data.parentId) {
+        getIO().emit('new_reply', {
+            messageId: data.parentId,
+            reply: message
         });
     } else {
-        io.to(`dm:${dmRoomId}`).emit('new_dm', formattedMessage);
+        getIO().to(`dm:${dmRoomId}`).emit('new_dm', message);
     }
 
-    return formattedMessage;
+    return message;
 }
 
 export async function getDirectMessages(userId: string, otherUserId: string) {

@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { io } from "../socket/socket.service";
+import { getIO } from "../socket/socket.service";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
@@ -12,21 +12,11 @@ export async function registerUser(email: string, password: string, name: string
 
   return await prisma.$transaction(async (tx) => {
     // First, check if there are any public channels
-    const publicChannels = await tx.channel.findMany({
-      where: {
-        OR: [
-          { type: "PUBLIC" },
-          { isPrivate: false }
-        ]
-      },
-      select: {
-        id: true,
-        name: true,
-        type: true
-      }
+    const channels = await prisma.channel.findMany({
+      where: { type: 'PUBLIC' }
     });
 
-    console.log('Available public channels:', publicChannels);
+    console.log('Available public channels:', channels);
 
     // Create user with explicit many-to-many relation
     const user = await tx.user.create({
@@ -35,8 +25,8 @@ export async function registerUser(email: string, password: string, name: string
         password: hashedPassword,
         name,
         status: 'online',
-        channels: publicChannels.length > 0 ? {
-          connect: publicChannels.map(channel => ({ id: channel.id }))
+        channels: channels.length > 0 ? {
+          connect: channels.map(channel => ({ id: channel.id }))
         } : undefined
       },
       include: {
@@ -45,8 +35,8 @@ export async function registerUser(email: string, password: string, name: string
     });
 
     // Use the imported io instance to emit events
-    if (io) {
-      io.emit('user.new', {
+    if (getIO()) {
+      getIO().emit('user.new', {
         id: user.id,
         email: user.email,
         name: user.name,
@@ -54,7 +44,7 @@ export async function registerUser(email: string, password: string, name: string
         status: user.status
       });
 
-      io.emit('user.status', {
+      getIO().emit('user.status', {
         id: user.id,
         status: 'online'
       });

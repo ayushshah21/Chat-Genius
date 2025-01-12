@@ -32,7 +32,9 @@ export const Message: React.FC<MessageProps> = ({
             <DeleteButton
               messageId={message.id}
               channelId={channelId}
-              isDM={isDM}
+              dmUserId={
+                isDM ? (message as DirectMessage).receiver.id : undefined
+              }
               isAuthor={
                 isDM
                   ? (message as DirectMessage).sender.id === currentUserId

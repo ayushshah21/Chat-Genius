@@ -2,20 +2,22 @@ import { Request, Response } from "express";
 import * as directMessageService from "../services/directMessage.service";
 
 export async function createDirectMessage(req: Request, res: Response) {
-    const { content, receiverId, parentId, fileIds } = req.body;
-    const senderId = (req as any).userId;
-
     try {
-        const message = await directMessageService.createDirectMessage(
+        const { content, receiverId, parentId, fileIds } = req.body;
+        const senderId = (req as any).userId;
+
+        const message = await directMessageService.createDirectMessage({
             content,
             senderId,
             receiverId,
             parentId,
             fileIds
-        );
-        res.status(201).json(message);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        });
+
+        res.json(message);
+    } catch (error) {
+        console.error('Error creating direct message:', error);
+        res.status(500).json({ error: 'Failed to create direct message' });
     }
 }
 

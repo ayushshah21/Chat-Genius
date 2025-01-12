@@ -100,7 +100,7 @@ export default function MessageInput({
             // Upload file to S3
             console.log("Starting S3 upload...");
             console.log("S3 Upload Request Details:", {
-              url: uploadResponse.data.url,
+              url: uploadResponse.data.uploadUrl,
               method: "PUT",
               contentType: selectedFile.type,
               fileSize: selectedFile.size,
@@ -110,13 +110,13 @@ export default function MessageInput({
             try {
               console.log(
                 "Making S3 request with URL:",
-                uploadResponse.data.url
+                uploadResponse.data.uploadUrl
               );
 
               // Use XMLHttpRequest instead of fetch
               const uploadPromise = new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                xhr.open("PUT", uploadResponse.data.url);
+                xhr.open("PUT", uploadResponse.data.uploadUrl);
 
                 // Set headers before sending
                 xhr.setRequestHeader("Content-Type", selectedFile.type);
@@ -159,7 +159,7 @@ export default function MessageInput({
               // Notify about file upload completion
               const fileUploadData = {
                 channelId,
-                fileId: uploadResponse.data.id,
+                fileId: uploadResponse.data.file.id,
                 messageId: uploadResponse.data.messageId,
                 size: selectedFile.size,
                 parentId,
@@ -231,7 +231,7 @@ export default function MessageInput({
             // Upload file to S3
             console.log("Starting S3 upload...");
             console.log("S3 Upload Request Details:", {
-              url: uploadResponse.data.url,
+              url: uploadResponse.data.uploadUrl,
               method: "PUT",
               contentType: selectedFile.type,
               fileSize: selectedFile.size,
@@ -241,13 +241,13 @@ export default function MessageInput({
             try {
               console.log(
                 "Making S3 request with URL:",
-                uploadResponse.data.url
+                uploadResponse.data.uploadUrl
               );
 
               // Use XMLHttpRequest instead of fetch
               const uploadPromise = new Promise((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                xhr.open("PUT", uploadResponse.data.url);
+                xhr.open("PUT", uploadResponse.data.uploadUrl);
 
                 // Set headers before sending
                 xhr.setRequestHeader("Content-Type", selectedFile.type);
@@ -290,7 +290,7 @@ export default function MessageInput({
               // Notify about file upload completion
               const fileUploadData = {
                 dmUserId,
-                fileId: uploadResponse.data.id,
+                fileId: uploadResponse.data.file.id,
                 messageId: uploadResponse.data.messageId,
                 size: selectedFile.size,
                 parentId,

@@ -2,19 +2,21 @@ import { Request, Response } from "express";
 import * as channelService from "../services/channel.service";
 
 export async function createChannel(req: Request, res: Response) {
-    const { name, type, memberIds } = req.body;
-    const userId = (req as any).userId; // From auth middleware
-
     try {
-        const channel = await channelService.createChannel(
+        const { name, type, memberIds } = req.body;
+        const userId = (req as any).userId;
+
+        const channel = await channelService.createChannel({
             name,
             type,
             userId,
             memberIds
-        );
-        res.status(201).json(channel);
-    } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        });
+
+        res.json(channel);
+    } catch (error) {
+        console.error('Error creating channel:', error);
+        res.status(500).json({ error: 'Failed to create channel' });
     }
 }
 

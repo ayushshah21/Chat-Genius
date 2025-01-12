@@ -48,25 +48,20 @@ passport.use(
               }
             });
 
-            // Get all public channels
-            const publicChannels = await tx.channel.findMany({
-              where: {
-                OR: [
-                  { type: "PUBLIC" },
-                  { isPrivate: false }
-                ]
-              }
+            // Get public channels
+            const channels = await prisma.channel.findMany({
+              where: { type: 'PUBLIC' }
             });
 
-            console.log('Found public channels:', publicChannels);
+            console.log('Found public channels:', channels);
 
             // If there are public channels, add user to them
-            if (publicChannels.length > 0) {
+            if (channels.length > 0) {
               await tx.user.update({
                 where: { id: newUser.id },
                 data: {
                   channels: {
-                    connect: publicChannels.map(channel => ({ id: channel.id }))
+                    connect: channels.map(channel => ({ id: channel.id }))
                   }
                 },
                 include: {

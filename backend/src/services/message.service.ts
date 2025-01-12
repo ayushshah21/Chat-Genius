@@ -1,5 +1,5 @@
 import { PrismaClient, Message } from '@prisma/client';
-import { io } from '../socket/socket.service';
+import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
@@ -201,23 +201,19 @@ export async function deleteMessage(messageId: string, userId: string): Promise<
             include: { user: true }
         });
 
-        if (!message) {
-            throw new Error('Message not found');
+        if (!message?.user?.id || message.user.id !== userId) {
+            throw new Error('Not authorized to delete this message');
         }
 
-        if (message.user.id !== userId) {
-            throw new Error('Unauthorized to delete this message');
-        }
+        // Delete associated reactions first
+        await prisma.emojiReaction.deleteMany({
+            where: { messageId }
+        });
 
-        // Delete the message and its associated reactions
-        await prisma.$transaction([
-            prisma.emojiReaction.deleteMany({
-                where: { messageId }
-            }),
-            prisma.message.delete({
-                where: { id: messageId }
-            })
-        ]);
+        // Delete the message
+        await prisma.message.delete({
+            where: { id: messageId }
+        });
     } catch (error) {
         console.error('[MessageService] Error deleting message:', error);
         throw error;
@@ -243,7 +239,7 @@ export async function deleteDirectMessage(messageId: string, userId: string): Pr
         // Delete the DM and its associated reactions
         await prisma.$transaction([
             prisma.emojiReaction.deleteMany({
-                where: { directMessageId: messageId }
+                where: { dmId: messageId }
             }),
             prisma.directMessage.delete({
                 where: { id: messageId }

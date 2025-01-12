@@ -33,7 +33,7 @@ function updateUserStatus(userId, status) {
         });
         console.log(`[UserService] Broadcasting status update for user ${userId}:`, user);
         // Broadcast the status update to all connected clients
-        socket_service_1.io.emit('user.status', user);
+        (0, socket_service_1.getIO)().emit('user.status', user);
         return user;
     });
 }

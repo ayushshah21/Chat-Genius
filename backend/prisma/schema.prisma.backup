@@ -1,0 +1,100 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id          String          @id @default(uuid())
+  email       String          @unique
+  password    String? // For local authentication
+  googleId    String?         @unique
+  name        String?
+  avatarUrl   String?
+  status      String?         @default("offline")
+  channels    Channel[]       @relation("ChannelMembers")
+  messages    Message[]
+  createdBy   Channel[]       @relation("ChannelCreator")
+  sentDMs     DirectMessage[] @relation("SenderDMs")
+  receivedDMs DirectMessage[] @relation("ReceiverDMs")
+  reactions   EmojiReaction[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model Channel {
+  id        String    @id @default(uuid())
+  name      String
+  type      String // "PUBLIC" | "PRIVATE"
+  createdBy String
+  isPrivate Boolean   @default(false)
+  messages  Message[]
+  members   User[]    @relation("ChannelMembers")
+  creator   User      @relation("ChannelCreator", fields: [createdBy], references: [id])
+  createdAt DateTime  @default(now())
+}
+
+model Message {
+  id        String          @id @default(uuid())
+  channelId String
+  userId    String
+  content   String?         @db.Text
+  parentId  String?
+  channel   Channel         @relation(fields: [channelId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
+  parent    Message?        @relation("ThreadMessages", fields: [parentId], references: [id])
+  replies   Message[]       @relation("ThreadMessages")
+  files     File[]
+  reactions EmojiReaction[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model DirectMessage {
+  id         String          @id @default(uuid())
+  content    String?         @db.Text
+  senderId   String
+  receiverId String
+  parentId   String?
+  sender     User            @relation("SenderDMs", fields: [senderId], references: [id])
+  receiver   User            @relation("ReceiverDMs", fields: [receiverId], references: [id])
+  parent     DirectMessage?  @relation("ThreadMessages", fields: [parentId], references: [id])
+  replies    DirectMessage[] @relation("ThreadMessages")
+  files      File[]
+  reactions  EmojiReaction[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model File {
+  id            String         @id @default(uuid())
+  name          String
+  type          String
+  size          Int
+  url           String
+  key           String // S3 key
+  message       Message?       @relation(fields: [messageId], references: [id])
+  messageId     String?
+  directMessage DirectMessage? @relation(fields: [dmId], references: [id])
+  dmId          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model EmojiReaction {
+  id              String         @id @default(uuid())
+  emoji           String
+  userId          String
+  messageId       String?
+  directMessageId String?
+  user            User           @relation(fields: [userId], references: [id])
+  message         Message?       @relation(fields: [messageId], references: [id])
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id])
+  createdAt       DateTime       @default(now())
+
+  @@unique([emoji, userId, messageId])
+  @@unique([emoji, userId, directMessageId])
+}

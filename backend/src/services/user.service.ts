@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { io } from '../socket/socket.service';
+import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
@@ -25,7 +25,7 @@ export async function updateUserStatus(userId: string, status: string) {
 
     console.log(`[UserService] Broadcasting status update for user ${userId}:`, user);
     // Broadcast the status update to all connected clients
-    io.emit('user.status', user);
+    getIO().emit('user.status', user);
     return user;
 }
 

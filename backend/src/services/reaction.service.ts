@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { io } from '../socket/socket.service';
+import { getIO} from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
@@ -7,7 +7,7 @@ export async function addReaction(
     emoji: string,
     userId: string,
     messageId?: string,
-    directMessageId?: string
+    dmId?: string
 ) {
     try {
         // Check if reaction already exists
@@ -16,7 +16,7 @@ export async function addReaction(
                 emoji,
                 userId,
                 ...(messageId ? { messageId } : {}),
-                ...(directMessageId ? { directMessageId } : {})
+                ...(dmId ? { dmId } : {})
             },
         });
 
@@ -30,7 +30,7 @@ export async function addReaction(
                 emoji,
                 userId,
                 ...(messageId ? { messageId } : {}),
-                ...(directMessageId ? { directMessageId } : {})
+                ...(dmId ? { dmId } : {})
             },
             include: {
                 user: {
@@ -55,7 +55,7 @@ export async function removeReaction(
     emoji: string,
     userId: string,
     messageId?: string,
-    directMessageId?: string
+    dmId?: string
 ) {
     try {
         const result = await prisma.emojiReaction.deleteMany({
@@ -63,7 +63,7 @@ export async function removeReaction(
                 emoji,
                 userId,
                 messageId,
-                directMessageId
+                dmId
             }
         });
 
@@ -74,12 +74,12 @@ export async function removeReaction(
     }
 }
 
-export async function getReactions(messageId?: string, directMessageId?: string) {
+export async function getReactions(messageId?: string, dmId?: string) {
     try {
         const reactions = await prisma.emojiReaction.findMany({
             where: {
                 messageId,
-                directMessageId
+                dmId
             },
             include: {
                 user: {

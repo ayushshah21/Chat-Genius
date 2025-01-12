@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { DirectMessage } from "../../types/directMessage";
+import { File } from "../../types/file";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { socket } from "../../lib/socket";
@@ -14,11 +15,45 @@ export default function DirectMessageChat() {
   const { userId } = useParams();
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const currentUserId = localStorage.getItem("userId");
-  const [fileUrls, setFileUrls] = useState<{ [key: string]: string }>({});
+  const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
+  const [previewErrors, setPreviewErrors] = useState<Record<string, boolean>>(
+    {}
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [selectedThread, setSelectedThread] = useState<DirectMessage | null>(
     null
   );
+
+  const isPreviewable = (fileType: string) => {
+    return fileType.startsWith("image/") || fileType === "application/pdf";
+  };
+
+  const handlePreviewError = (fileId: string) => {
+    setPreviewErrors((prev) => ({ ...prev, [fileId]: true }));
+  };
+
+  const fetchFileUrlsForMessage = async (files: File[]) => {
+    try {
+      const urls: Record<string, string> = {};
+      for (const file of files) {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
+        );
+        urls[file.id] = response.data.downloadUrl;
+      }
+      setFileUrls((prev) => ({ ...prev, ...urls }));
+    } catch (error) {
+      console.error("Error fetching file URLs:", error);
+    }
+  };
+
+  useEffect(() => {
+    messages.forEach((message) => {
+      if (message.files && message.files.length > 0) {
+        fetchFileUrlsForMessage(message.files);
+      }
+    });
+  }, [messages]);
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -50,12 +85,6 @@ export default function DirectMessageChat() {
       }
       setFileUrls((prev) => ({ ...prev, ...urls }));
     }
-  };
-
-  // Add handleDelete at component level
-  const handleDelete = (messageId: string) => {
-    console.log("[DirectMessageChat] Deleting message:", messageId);
-    setMessages(messages.filter((m) => m.id !== messageId));
   };
 
   useEffect(() => {
@@ -312,9 +341,8 @@ export default function DirectMessageChat() {
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <DeleteButton
                     messageId={message.id}
-                    isDM={true}
+                    dmUserId={userId}
                     isAuthor={message.sender.id === currentUserId}
-                    onDelete={() => handleDelete(message.id)}
                   />
                 </div>
               </div>
@@ -323,11 +351,23 @@ export default function DirectMessageChat() {
               )}
               {message.files && message.files.length > 0 && (
                 <div className="mt-2 space-y-2">
-                  {message.files.map((file) => (
+                  {message.files.map((file: File) => (
                     <div
                       key={file.id}
                       className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
                     >
+                      {fileUrls[file.id] &&
+                        isPreviewable(file.type) &&
+                        !previewErrors[file.id] && (
+                          <div className="max-w-md">
+                            <img
+                              src={fileUrls[file.id]}
+                              alt={file.name}
+                              className="rounded-md max-h-96 object-contain"
+                              onError={() => handlePreviewError(file.id)}
+                            />
+                          </div>
+                        )}
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <p className="text-sm text-[var(--text)]">
@@ -337,17 +377,29 @@ export default function DirectMessageChat() {
                             {(file.size / 1024).toFixed(1)} KB
                           </p>
                         </div>
-                        {fileUrls[file.id] && (
+                        <div className="flex space-x-2">
+                          {fileUrls[file.id] && (
+                            <a
+                              href={fileUrls[file.id]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
+                            >
+                              {file.type === "application/pdf"
+                                ? "Open PDF"
+                                : "View"}
+                            </a>
+                          )}
                           <a
                             href={fileUrls[file.id]}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110"
+                            className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                             download
                           >
                             Download
                           </a>
-                        )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -356,7 +408,7 @@ export default function DirectMessageChat() {
               <div className="mt-2 flex items-center space-x-4">
                 <EmojiReactions
                   messageId={message.id}
-                  isDM={true}
+                  dmUserId={userId}
                   reactions={message.reactions || []}
                   key={`reactions-${message.id}-${JSON.stringify(
                     message.reactions

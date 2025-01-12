@@ -27,20 +27,10 @@ function registerUser(email, password, name) {
         console.log('Starting user registration for:', email);
         return yield prisma.$transaction((tx) => __awaiter(this, void 0, void 0, function* () {
             // First, check if there are any public channels
-            const publicChannels = yield tx.channel.findMany({
-                where: {
-                    OR: [
-                        { type: "PUBLIC" },
-                        { isPrivate: false }
-                    ]
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    type: true
-                }
+            const channels = yield prisma.channel.findMany({
+                where: { type: 'PUBLIC' }
             });
-            console.log('Available public channels:', publicChannels);
+            console.log('Available public channels:', channels);
             // Create user with explicit many-to-many relation
             const user = yield tx.user.create({
                 data: {
@@ -48,8 +38,8 @@ function registerUser(email, password, name) {
                     password: hashedPassword,
                     name,
                     status: 'online',
-                    channels: publicChannels.length > 0 ? {
-                        connect: publicChannels.map(channel => ({ id: channel.id }))
+                    channels: channels.length > 0 ? {
+                        connect: channels.map(channel => ({ id: channel.id }))
                     } : undefined
                 },
                 include: {
@@ -57,15 +47,15 @@ function registerUser(email, password, name) {
                 }
             });
             // Use the imported io instance to emit events
-            if (socket_service_1.io) {
-                socket_service_1.io.emit('user.new', {
+            if ((0, socket_service_1.getIO)()) {
+                (0, socket_service_1.getIO)().emit('user.new', {
                     id: user.id,
                     email: user.email,
                     name: user.name,
                     avatarUrl: user.avatarUrl,
                     status: user.status
                 });
-                socket_service_1.io.emit('user.status', {
+                (0, socket_service_1.getIO)().emit('user.status', {
                     id: user.id,
                     status: 'online'
                 });
