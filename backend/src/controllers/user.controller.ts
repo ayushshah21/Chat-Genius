@@ -17,13 +17,14 @@ export async function getProfile(req: Request, res: Response) {
 
 export async function updateProfile(req: Request, res: Response) {
     const userId = (req as any).userId;
-    const { name, email, avatarUrl } = req.body;
+    const { name, email, avatarUrl, autoReplyEnabled } = req.body;
 
     try {
         const updatedUser = await userService.updateUserProfile(userId, {
             name,
             email,
             avatarUrl,
+            autoReplyEnabled,
         });
         res.json(updatedUser);
     } catch (error: any) {

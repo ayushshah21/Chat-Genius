@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Send, Paperclip } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Send, Paperclip, Sparkles } from "lucide-react";
 import { socket } from "../../lib/socket";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
@@ -14,18 +14,80 @@ interface Props {
   isThread?: boolean;
 }
 
+// Add type definition for AI suggestion response
+type AISuggestionResponse = {
+  suggestion?: string;
+  originalContent?: string;
+  choices?: Array<{
+    message: {
+      content: string;
+    };
+  }>;
+  generation?: string;
+  outputs?: Array<{
+    text: string;
+  }>;
+  completion?: string;
+};
+
 export default function MessageInput({
   channelId,
   dmUserId,
   onMessageSent,
   parentId,
   placeholder = "Type a message...",
-  isThread = false,
 }: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    socket.on("ai_suggestion", (response: AISuggestionResponse) => {
+      console.log("Received AI suggestion:", response);
+      const suggestion =
+        response.suggestion ||
+        response.choices?.[0]?.message?.content ||
+        response.generation ||
+        response.outputs?.[0]?.text ||
+        response.completion;
+
+      if (suggestion) {
+        setSuggestions([suggestion]);
+      }
+      setLoadingSuggestions(false);
+    });
+
+    socket.on("suggestion_error", (error: string) => {
+      console.error("Error getting suggestions:", error);
+      setLoadingSuggestions(false);
+    });
+
+    return () => {
+      socket.off("ai_suggestion");
+      socket.off("suggestion_error");
+    };
+  }, []);
+
+  const requestSuggestions = () => {
+    if (loadingSuggestions) return;
+
+    setLoadingSuggestions(true);
+    setSuggestions([]);
+
+    socket.emit("request_ai_suggestion", {
+      channelId,
+      dmUserId,
+      parentId,
+    });
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setMessage(suggestion);
+    setSuggestions([]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -354,85 +416,88 @@ export default function MessageInput({
     }
   };
 
-  const handleFileClick = () => {
-    console.log("File input click triggered");
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log("File input change event:", e);
-    console.log("File input files:", e.target.files);
-    const file = e.target.files?.[0];
-    if (file) {
-      // Only allow files up to 10MB
-      if (file.size > 10 * 1024 * 1024) {
-        console.log("File too large:", file.size);
-        alert("File size must be less than 10MB");
-        return;
-      }
-      console.log("File selected:", {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-      });
-      setSelectedFile(file);
-    } else {
-      console.log("No file selected");
-    }
-  };
-
   return (
-    <form onSubmit={handleSubmit} className={!isThread ? "p-4" : undefined}>
-      <div className="flex flex-col space-y-2">
-        {selectedFile && (
-          <div className="flex items-center space-x-2 px-4 py-2 bg-gray-700 rounded-md">
-            <span className="text-sm text-gray-300">{selectedFile.name}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFile(null);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = "";
-                }
-              }}
-              className="text-gray-400 hover:text-gray-300"
-            >
-              ×
-            </button>
-          </div>
-        )}
-        <div className="flex items-center space-x-2">
+    <div className="flex flex-col w-full">
+      <form
+        onSubmit={handleSubmit}
+        className="flex items-center gap-2 w-full bg-[var(--background-light)] p-2 rounded-lg border border-[var(--border)] focus-within:ring-1 focus-within:ring-[var(--primary)] transition-shadow duration-200"
+      >
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2 hover:bg-[var(--background-hover)] rounded-lg transition-colors duration-200"
+          title="Attach file"
+        >
+          <Paperclip className="w-5 h-5 text-[var(--text-muted)] hover:text-[var(--text)]" />
+        </button>
+
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 p-2 bg-transparent text-[var(--text)] text-base placeholder-[var(--text-muted)] focus:outline-none"
+        />
+
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={handleFileClick}
-            className="p-2 text-gray-400 hover:text-gray-300 transition-colors duration-200"
+            onClick={requestSuggestions}
+            disabled={loadingSuggestions}
+            className={`p-2.5 rounded-lg transition-all duration-200 ${
+              !loadingSuggestions
+                ? "hover:bg-[var(--background-hover)] text-[var(--primary)]"
+                : "opacity-50 cursor-not-allowed text-[var(--text-muted)]"
+            }`}
+            title="Get AI suggestions based on chat history"
           >
-            <Paperclip className="w-5 h-5" />
+            <Sparkles className="w-5.5 h-5.5" />
           </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            onChange={handleFileChange}
-            accept="image/*,.pdf,.doc,.docx,.txt"
-          />
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={placeholder}
-            className="flex-1 px-4 py-2 bg-[#222529] text-white border border-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 transition-shadow duration-200"
-            disabled={sending}
-          />
+
           <button
             type="submit"
-            disabled={sending || (!message.trim() && !selectedFile)}
-            className="p-2 text-white bg-[#007a5a] rounded-full hover:bg-[#148567] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+            disabled={(!message.trim() && !selectedFile) || sending}
+            className={`p-2.5 rounded-lg transition-all duration-200 ${
+              (message.trim() || selectedFile) && !sending
+                ? "hover:bg-[var(--background-hover)] text-[var(--primary)]"
+                : "opacity-50 cursor-not-allowed text-[var(--text-muted)]"
+            }`}
           >
-            <Send className="w-5 h-5" />
+            <Send className="w-5.5 h-5.5" />
           </button>
         </div>
-      </div>
-    </form>
+
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) setSelectedFile(file);
+          }}
+          className="hidden"
+        />
+      </form>
+
+      {loadingSuggestions && (
+        <div className="mt-3 text-base text-[var(--text-muted)] flex items-center gap-2 px-2">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-[var(--primary)] border-t-transparent"></div>
+          Generating suggestions...
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {suggestions.map((suggestion, index) => (
+            <button
+              key={index}
+              onClick={() => handleSuggestionClick(suggestion)}
+              className="block w-full text-left p-3.5 text-base text-[var(--text)] bg-[var(--background-light)] hover:bg-[var(--background-hover)] rounded-lg border border-[var(--border)] transition-colors duration-200 hover:border-[var(--primary)]"
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -31,7 +31,9 @@ export async function getUploadUrl(req: Request, res: Response) {
                             content: content || '',
                             channel: { connect: { id: channelId } },
                             user: { connect: { id: (req as any).userId } },
-                            parentId
+                            parent: parentId ? {
+                                connect: { id: parentId }
+                            } : undefined
                         }
                     }
                 } : {

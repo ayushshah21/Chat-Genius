@@ -408,10 +408,10 @@ const MessageItem = React.forwardRef<
       />
       <div className="flex-1 overflow-hidden">
         <div className="flex items-center space-x-2">
-          <span className="font-medium text-[var(--text)]">
+          <span className="font-medium text-[var(--text)] text-base">
             {userInfo.name || userInfo.email}
           </span>
-          <span className="text-xs text-[var(--text-muted)]">
+          <span className="text-sm text-[var(--text-muted)]">
             {formatMessageDate(new Date(message.createdAt))}
           </span>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -430,14 +430,16 @@ const MessageItem = React.forwardRef<
           </div>
         </div>
         {message.content && (
-          <p className="text-sm text-[var(--text)]">{message.content}</p>
+          <p className="text-base text-[var(--text)] leading-relaxed">
+            {message.content}
+          </p>
         )}
         {message.files && message.files.length > 0 && (
-          <div className="mt-2 space-y-2">
+          <div className="mt-3 space-y-2">
             {message.files.map((file) => (
               <div
                 key={file.id}
-                className="flex flex-col space-y-2 bg-[var(--background-light)] p-2 rounded"
+                className="flex flex-col space-y-2 bg-[var(--background-light)] p-3 rounded"
               >
                 {fileUrls[file.id] &&
                   isPreviewable(file.type) &&
@@ -453,8 +455,8 @@ const MessageItem = React.forwardRef<
                   )}
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <p className="text-sm text-[var(--text)]">{file.name}</p>
-                    <p className="text-xs text-[var(--text-muted)]">
+                    <p className="text-base text-[var(--text)]">{file.name}</p>
+                    <p className="text-sm text-[var(--text-muted)]">
                       {(file.size / 1024).toFixed(1)} KB
                     </p>
                   </div>
@@ -464,7 +466,7 @@ const MessageItem = React.forwardRef<
                         href={fileUrls[file.id]}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
+                        className="px-3 py-1.5 text-base text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                       >
                         {file.type === "application/pdf" ? "Open PDF" : "View"}
                       </a>
@@ -473,7 +475,7 @@ const MessageItem = React.forwardRef<
                       href={fileUrls[file.id]}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1 text-sm text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
+                      className="px-3 py-1.5 text-base text-[var(--primary)] hover:brightness-110 transition-colors duration-200"
                       download
                     >
                       Download
@@ -493,9 +495,9 @@ const MessageItem = React.forwardRef<
           />
           <button
             onClick={onThreadClick}
-            className="text-xs text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1 transition-colors duration-200"
+            className="text-sm text-[var(--text-muted)] hover:text-[var(--primary)] flex items-center space-x-1.5 transition-colors duration-200"
           >
-            <MessageCircle className="w-3.5 h-3.5" />
+            <MessageCircle className="w-4 h-4" />
             <span>
               {replyCount > 0
                 ? `${replyCount} ${replyCount === 1 ? "reply" : "replies"}`

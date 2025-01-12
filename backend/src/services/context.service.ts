@@ -42,14 +42,6 @@ class ContextService {
 
             const { Item } = await dynamoDbClient.send(command);
 
-            // If we have enough recent messages in DynamoDB, use them
-            const messages = Item?.lastMessages?.L;
-            if (messages && messages.length >= 5) {
-                return messages
-                    .map(msg => msg.S)
-                    .filter((content): content is string => content !== undefined);
-            }
-
             // Not enough context in DynamoDB, fetch from PostgreSQL
             const dbMessages = type === "channel"
                 ? await this.getChannelHistory(contextId)
@@ -58,10 +50,12 @@ class ContextService {
             // Store the context in DynamoDB for future use
             await this.updateChatContext(contextId, type, dbMessages);
 
-            // Filter out any null content
+            // Format messages with speaker information and proper ordering
             return dbMessages
-                .map(msg => msg.content)
-                .filter((content): content is string => content !== null);
+                .filter(msg => msg.content !== null)
+                .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()) // Sort by time ascending
+                .map(msg => `[Context] ${msg.user?.name || 'Unknown'}: ${msg.content}`) // Add [Context] prefix to help AI distinguish
+                .slice(-10); // Only use last 10 messages for immediate context
         } catch (error) {
             console.error("Error getting chat context:", error);
             throw new Error("Failed to retrieve chat context");
@@ -131,10 +125,30 @@ class ContextService {
      * Get DM history from PostgreSQL
      */
     private async getDMHistory(dmId: string): Promise<Message[]> {
+        // Split the dmId into sender and receiver IDs
+        const [user1Id, user2Id] = dmId.split(':');
+
         const messages = await prisma.directMessage.findMany({
             where: {
-                id: dmId,
-                content: { not: null }
+                AND: [
+                    { content: { not: null } },
+                    {
+                        OR: [
+                            {
+                                AND: [
+                                    { senderId: user1Id },
+                                    { receiverId: user2Id }
+                                ]
+                            },
+                            {
+                                AND: [
+                                    { senderId: user2Id },
+                                    { receiverId: user1Id }
+                                ]
+                            }
+                        ]
+                    }
+                ]
             },
             orderBy: { createdAt: "desc" },
             take: 50,

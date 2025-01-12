@@ -29,6 +29,7 @@ function updateUserStatus(userId, status) {
                 name: true,
                 avatarUrl: true,
                 status: true,
+                autoReplyEnabled: true,
             }
         });
         console.log(`[UserService] Broadcasting status update for user ${userId}:`, user);
@@ -48,6 +49,7 @@ function getUserById(userId) {
                 name: true,
                 avatarUrl: true,
                 status: true,
+                autoReplyEnabled: true,
             }
         });
         console.log(`[UserService] Found user:`, user);
@@ -68,6 +70,7 @@ function getUserProfile(userId) {
                 googleId: true,
                 createdAt: true,
                 updatedAt: true,
+                autoReplyEnabled: true,
             }
         });
         console.log(`[UserService] Found user profile:`, user);
@@ -89,6 +92,7 @@ function updateUserProfile(userId, data) {
                 googleId: true,
                 createdAt: true,
                 updatedAt: true,
+                autoReplyEnabled: true,
             }
         });
         console.log(`[UserService] Updated user profile:`, user);
@@ -108,7 +112,8 @@ function getAvailableUsers(currentUserId) {
                 name: true,
                 email: true,
                 avatarUrl: true,
-                status: true
+                status: true,
+                autoReplyEnabled: true,
             }
         });
     });

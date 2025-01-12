@@ -7,6 +7,7 @@ interface UpdateUserProfileData {
     name?: string | null;
     email?: string;
     avatarUrl?: string | null;
+    autoReplyEnabled?: boolean;
 }
 
 export async function updateUserStatus(userId: string, status: string) {
@@ -20,6 +21,7 @@ export async function updateUserStatus(userId: string, status: string) {
             name: true,
             avatarUrl: true,
             status: true,
+            autoReplyEnabled: true,
         }
     });
 
@@ -39,6 +41,7 @@ export async function getUserById(userId: string) {
             name: true,
             avatarUrl: true,
             status: true,
+            autoReplyEnabled: true,
         }
     });
     console.log(`[UserService] Found user:`, user);
@@ -58,6 +61,7 @@ export async function getUserProfile(userId: string) {
             googleId: true,
             createdAt: true,
             updatedAt: true,
+            autoReplyEnabled: true,
         }
     });
     console.log(`[UserService] Found user profile:`, user);
@@ -78,6 +82,7 @@ export async function updateUserProfile(userId: string, data: UpdateUserProfileD
             googleId: true,
             createdAt: true,
             updatedAt: true,
+            autoReplyEnabled: true,
         }
     });
     console.log(`[UserService] Updated user profile:`, user);
@@ -96,7 +101,8 @@ export async function getAvailableUsers(currentUserId: string) {
             name: true,
             email: true,
             avatarUrl: true,
-            status: true
+            status: true,
+            autoReplyEnabled: true,
         }
     });
 }

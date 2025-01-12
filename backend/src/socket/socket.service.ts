@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import express from 'express';
 import { createMessage } from '../services/message.service';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Message, DirectMessage } from '@prisma/client';
 import * as userService from '../services/user.service';
 import * as reactionService from '../services/reaction.service';
 import * as messageService from '../services/message.service';
@@ -102,10 +102,10 @@ export function setupSocketIO(server: Server) {
 
                 // Ensure socket is in both channel rooms before allowing message
                 if (!socket.rooms.has(data.channelId)) {
-                    socket.join(data.channelId); // Auto-join if not in room
+                    socket.join(data.channelId);
                 }
                 if (!socket.rooms.has(`channel_${data.channelId}`)) {
-                    socket.join(`channel_${data.channelId}`); // Auto-join reaction room
+                    socket.join(`channel_${data.channelId}`);
                 }
 
                 const message = await createMessage(
@@ -115,11 +115,144 @@ export function setupSocketIO(server: Server) {
                     data.parentId
                 );
 
-                // Broadcast to all clients in the channel, including sender
+                // Emit original message immediately
+                if (data.channelId) {
+                    console.log('[SocketService] Emitting original channel message:', {
+                        channelId: data.channelId,
+                        messageId: message.id
+                    });
+                    io.to(data.channelId).emit('new_message', message);
+                }
+
+                let shouldAutoRespond = false;
+                let autoRespondUser = null;
+
+                // For channel messages, check mentions
+                if (data.channelId && data.content) {
+                    // Extract both @username and @email mentions
+                    const mentions = data.content.match(/@(\S+)/g)?.map(m => m.slice(1)) || [];
+
+                    const mentionedUsers = await prisma.user.findMany({
+                        where: {
+                            OR: [
+                                { name: { in: mentions } },
+                                { email: { in: mentions } }
+                            ]
+                        },
+                        select: {
+                            id: true,
+                            name: true,
+                            communicationStyle: true,
+                            commonPhrases: true,
+                            autoReplyEnabled: true
+                        }
+                    });
+
+                    console.log('[SocketService] Found mentioned users:', {
+                        mentions,
+                        foundUsers: mentionedUsers.map(u => u.name)
+                    });
+
+                    // Find first user with auto-reply enabled
+                    autoRespondUser = mentionedUsers.find(u => u.autoReplyEnabled);
+                    shouldAutoRespond = !!autoRespondUser;
+                }
+
+                // Generate auto-response if needed
+                if (shouldAutoRespond && autoRespondUser) {
+                    console.log('[SocketService] Generating auto-response:', {
+                        userId: decoded.userId,
+                        autoRespondUserId: autoRespondUser.id,
+                        messageType: data.channelId ? 'channel' : 'dm'
+                    });
+
+                    const contextType = data.channelId ? 'channel' : 'dm';
+                    const contextId = data.channelId || data.dmUserId;
+                    const context = await contextService.getChatContext(contextId!, contextType);
+
+                    const prompt = `Based on this conversation, provide an appropriate response.
+                    The message "${data.content}" was directed at you.
+                    
+                    Recent conversation:
+                    ${context.join('\n')}
+
+                    Rules:
+                    1. Don't prefix responses with sender names or acknowledgments
+                    2. For direct questions, give a brief, focused answer and stop
+                    3. Don't try to change topics or steer the conversation
+                    4. Keep responses concise and natural
+                    5. You ARE the person in the conversation - don't talk TO them, BE them
+                    6. Don't use phrases like "your" or "you" unless asking a question
+                    7. Don't acknowledge previous messages with phrases like "as mentioned earlier"
+                    8. Respond in first person as if expressing your own thoughts/preferences
+                    9. DO include specific names (like player names, person names, etc.) when they are relevant to the content`;
+
+                    const autoResponse = await aiService.generatePersonalityResponse(
+                        prompt,
+                        autoRespondUser.communicationStyle || 'professional',
+                        context.join('\n')
+                    );
+
+                    // Create auto-response message with isAI flag
+                    const responseMessage = data.channelId
+                        ? await messageService.createMessage(
+                            autoResponse,
+                            data.channelId,
+                            autoRespondUser.id,
+                            undefined, // No parent ID for direct channel messages
+                            undefined
+                        )
+                        : await prisma.directMessage.create({
+                            data: {
+                                content: autoResponse,
+                                senderId: autoRespondUser.id,
+                                receiverId: decoded.userId,
+                                isAI: true
+                            },
+                            include: {
+                                sender: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                },
+                                receiver: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                }
+                            }
+                        });
+
+                    console.log('[SocketService] Created auto-response message:', {
+                        messageId: responseMessage.id,
+                        type: data.channelId ? 'channel' : 'dm',
+                        autoRespondUserId: autoRespondUser.id
+                    });
+
+                    // Emit the auto-response after a short delay
+                    setTimeout(() => {
+                        if (data.channelId) {
+                            console.log('[SocketService] Emitting channel auto-response:', {
+                                channelId: data.channelId,
+                                messageId: responseMessage.id
+                            });
+                            io.to(data.channelId).emit('new_message', responseMessage);
+                        } else {
+                            const dmRoomId = [decoded.userId, data.dmUserId].sort().join(':');
+                            io.to(`dm:${dmRoomId}`).emit('new_dm', responseMessage);
+                        }
+                    }, 500);
+                }
+
+                // Broadcast original message
                 if (data.parentId) {
                     io.emit('new_reply', message);
-                } else {
-                    io.to(data.channelId).emit('new_message', message);
                 }
             } catch (error) {
                 console.error('Error sending message:', error);
@@ -230,8 +363,13 @@ export function setupSocketIO(server: Server) {
             content: string;
             receiverId: string;
             parentId?: string;
-            fileIds?: string[];
         }) => {
+            console.log('[SocketService] Received send_dm event:', {
+                content: data.content,
+                receiverId: data.receiverId,
+                parentId: data.parentId
+            });
+
             const token = socket.handshake.auth.token;
             if (!token) {
                 socket.emit('message_error', { error: 'Authentication required' });
@@ -240,17 +378,18 @@ export function setupSocketIO(server: Server) {
 
             try {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
+                console.log('[SocketService] Authenticated user:', {
+                    userId: decoded.userId,
+                    receiverId: data.receiverId
+                });
+
+                // Create the DM
                 const message = await prisma.directMessage.create({
                     data: {
                         content: data.content,
                         senderId: decoded.userId,
                         receiverId: data.receiverId,
-                        parentId: data.parentId,
-                        ...(data.fileIds && {
-                            files: {
-                                connect: data.fileIds.map(id => ({ id }))
-                            }
-                        })
+                        parentId: data.parentId
                     },
                     include: {
                         sender: {
@@ -258,7 +397,7 @@ export function setupSocketIO(server: Server) {
                                 id: true,
                                 name: true,
                                 email: true,
-                                avatarUrl: true,
+                                avatarUrl: true
                             }
                         },
                         receiver: {
@@ -267,26 +406,128 @@ export function setupSocketIO(server: Server) {
                                 name: true,
                                 email: true,
                                 avatarUrl: true,
+                                autoReplyEnabled: true,
+                                communicationStyle: true,
+                                commonPhrases: true
                             }
-                        },
-                        files: true
+                        }
                     }
                 });
 
-                // Create a unique room ID for this DM conversation
+                console.log('[SocketService] Created DM:', {
+                    messageId: message.id,
+                    senderId: message.sender.id,
+                    receiverId: message.receiver.id,
+                    receiverAutoReply: message.receiver.autoReplyEnabled
+                });
+
+                // Emit original message first
                 const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
 
-                // Emit different events based on whether it's a reply or not
-                if (data.parentId) {
-                    io.emit('new_reply', message);
-                } else {
-                    io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+                // Ensure socket is in DM room for original message
+                if (!socket.rooms.has(`dm:${dmRoomId}`)) {
+                    console.log('[SocketService] Joining DM room for original message:', `dm:${dmRoomId}`);
+                    socket.join(`dm:${dmRoomId}`);
                 }
 
-                return message;
+                console.log('[SocketService] Emitting original DM:', {
+                    dmRoomId,
+                    messageId: message.id,
+                    socketRooms: Array.from(socket.rooms)
+                });
+
+                io.to(`dm:${dmRoomId}`).emit('new_dm', message);
+
+                // Then handle auto-response if enabled
+                if (message.receiver.autoReplyEnabled) {
+                    console.log('[SocketService] Auto-response enabled for DM receiver:', {
+                        receiverId: data.receiverId,
+                        receiverName: message.receiver.name
+                    });
+
+                    // Get context and generate response
+                    const contextType = 'dm';
+                    const contextId = data.receiverId;
+                    const context = await contextService.getChatContext(contextId, contextType);
+
+                    console.log('[SocketService] Retrieved context for auto-response:', {
+                        contextType,
+                        contextId,
+                        contextLength: context.length
+                    });
+
+                    const prompt = `Based on this conversation, provide an appropriate response.
+                    The message "${data.content}" was directed at you.
+                    
+                    Recent conversation:
+                    ${context.join('\n')}
+
+                    Rules:
+                    1. Don't prefix responses with sender names or acknowledgments
+                    2. For direct questions, give a brief, focused answer and stop
+                    3. Don't try to change topics or steer the conversation
+                    4. Keep responses concise and natural
+                    5. You ARE the person in the conversation - don't talk TO them, BE them
+                    6. Don't use phrases like "your" or "you" unless asking a question
+                    7. Don't acknowledge previous messages with phrases like "as mentioned earlier"
+                    8. Respond in first person as if expressing your own thoughts/preferences
+                    9. DO include specific names (like player names, person names, etc.) when they are relevant to the content`;
+
+                    const autoResponse = await aiService.generatePersonalityResponse(
+                        prompt,
+                        message.receiver.communicationStyle || 'professional',
+                        context.join('\n')
+                    );
+
+                    console.log('[SocketService] Generated auto-response:', {
+                        responseLength: autoResponse?.length,
+                        preview: autoResponse?.slice(0, 50) + '...'
+                    });
+
+                    // Create and emit auto-response message after a short delay
+                    setTimeout(async () => {
+                        const responseMessage = await prisma.directMessage.create({
+                            data: {
+                                content: autoResponse,
+                                senderId: data.receiverId,
+                                receiverId: decoded.userId,
+                                isAI: true
+                            },
+                            include: {
+                                sender: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                },
+                                receiver: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                }
+                            }
+                        });
+
+                        console.log('[SocketService] Emitting DM auto-response:', {
+                            dmRoomId,
+                            messageId: responseMessage.id,
+                            senderId: data.receiverId,
+                            receiverId: decoded.userId,
+                            messageContent: autoResponse?.slice(0, 50) + '...'
+                        });
+
+                        io.to(`dm:${dmRoomId}`).emit('new_dm', responseMessage);
+                    }, 500); // Add a small delay to ensure message order
+                }
+
             } catch (error) {
                 console.error('Error sending DM:', error);
-                socket.emit('message_error', { error: 'Failed to send message' });
+                socket.emit('message_error', { error: 'Failed to send direct message' });
             }
         });
 
@@ -777,8 +1018,24 @@ export function setupSocketIO(server: Server) {
                 }
 
                 // Generate suggestion
+                const prompt = `Based on this conversation, provide an appropriate response.
+
+                Recent conversation:
+                ${context.join('\n')}
+
+                Rules:
+                1. Don't prefix responses with sender names or acknowledgments
+                2. For direct questions, give a brief, focused answer and stop
+                3. Don't try to change topics or steer the conversation
+                4. Keep responses concise and natural
+                5. You ARE the person in the conversation - don't talk TO them, BE them
+                6. Don't use phrases like "your" or "you" unless asking a question
+                7. Don't acknowledge previous messages with phrases like "as mentioned earlier"
+                8. Respond in first person as if expressing your own thoughts/preferences
+                9. DO include specific names (like player names, person names, etc.) when they are relevant to the content`;
+
                 const suggestion = await aiService.generatePersonalityResponse(
-                    data.content,
+                    prompt,
                     user.communicationStyle || 'professional',
                     context.join('\n')
                 );
@@ -824,7 +1081,6 @@ export function setupSocketIO(server: Server) {
                 }
                 const contextType = data.channelId ? 'channel' : 'dm';
                 const context = await contextService.getChatContext(contextId, contextType);
-                const contextSummary = Array.isArray(context) && context.length > 0 ? context[0] : '';
 
                 // Rate limit check
                 const now = Date.now();
@@ -837,10 +1093,41 @@ export function setupSocketIO(server: Server) {
                     suggestionRequests[userId]--;
                 }, SUGGESTION_WINDOW);
 
+                // Get user's style preferences
+                const user = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: {
+                        name: true,
+                        communicationStyle: true,
+                        commonPhrases: true
+                    }
+                });
+
+                if (!user) {
+                    throw new Error('User not found');
+                }
+
                 // Generate suggestion
+                const prompt = `Based on this conversation, provide an appropriate response.
+
+                Recent conversation:
+                ${context.join('\n')}
+
+                Rules:
+                1. Don't prefix responses with sender names or acknowledgments
+                2. For direct questions, give a brief, focused answer and stop
+                3. Don't try to change topics or steer the conversation
+                4. Keep responses concise and natural
+                5. You ARE the person in the conversation - don't talk TO them, BE them
+                6. Don't use phrases like "your" or "you" unless asking a question
+                7. Don't acknowledge previous messages with phrases like "as mentioned earlier"
+                8. Respond in first person as if expressing your own thoughts/preferences
+                9. DO include specific names (like player names, person names, etc.) when they are relevant to the content`;
+
                 const suggestion = await aiService.generatePersonalityResponse(
-                    data.messageContent || '',
-                    contextSummary
+                    prompt,
+                    user.communicationStyle || 'professional',
+                    context.join('\n')
                 );
 
                 // Emit suggestion back to user
