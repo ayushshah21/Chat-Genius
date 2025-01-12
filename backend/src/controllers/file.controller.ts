@@ -38,9 +38,15 @@ export async function getUploadUrl(req: Request, res: Response) {
                     dm: {
                         create: {
                             content: content || '',
-                            sender: { connect: { id: (req as any).userId } },
-                            receiver: { connect: { id: dmUserId } },
-                            parentId
+                            sender: {
+                                connect: { id: (req as any).userId }
+                            },
+                            receiver: {
+                                connect: { id: dmUserId }
+                            },
+                            parent: parentId ? {
+                                connect: { id: parentId }
+                            } : undefined
                         }
                     }
                 })

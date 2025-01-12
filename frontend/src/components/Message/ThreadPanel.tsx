@@ -42,7 +42,7 @@ export default function ThreadPanel({
           const response = await axiosInstance.get(
             API_CONFIG.ENDPOINTS.FILES.DOWNLOAD_URL(file.id)
           );
-          urls[file.id] = response.data.url;
+          urls[file.id] = response.data.downloadUrl;
         } catch (error) {
           console.error("Failed to get download URL for file:", file.id, error);
         }

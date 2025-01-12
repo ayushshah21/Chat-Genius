@@ -8,5 +8,5 @@ export interface File {
     userId?: string;
     messageId?: string;
     dmId?: string;
-    createdAt: Date;
+    createdAt: Date | string;
 } 
