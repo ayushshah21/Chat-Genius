@@ -26,9 +26,28 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
     (response) => response,
     (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+        if (error.response) {
+            switch (error.response.status) {
+                case 401:
+                    // Unauthorized - clear token and redirect to login
+                    localStorage.removeItem('token');
+                    window.location.href = '/login';
+                    break;
+                case 403:
+                    // Forbidden - user doesn't have permission
+                    console.error('Access forbidden:', error.response.data.error);
+                    break;
+                case 400:
+                    // Bad Request - validation error
+                    console.error('Validation error:', error.response.data.error);
+                    break;
+                case 500:
+                    // Internal Server Error
+                    console.error('Server error:', error.response.data.error);
+                    break;
+                default:
+                    console.error('Request failed:', error.response.data.error);
+            }
         }
         return Promise.reject(error);
     }

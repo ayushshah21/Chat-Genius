@@ -2,21 +2,28 @@ import { Request, Response } from "express";
 import * as channelService from "../services/channel.service";
 
 export async function createChannel(req: Request, res: Response) {
+    const { name, description } = req.body;
+    const userId = (req as any).userId;
+
     try {
-        const { name, type, memberIds } = req.body;
-        const userId = (req as any).userId;
+        const channel = await channelService.createChannel({ name, userId });
+        res.status(201).json(channel);
+    } catch (error: any) {
+        console.error('[ChannelController] Error creating channel:', error);
 
-        const channel = await channelService.createChannel({
-            name,
-            type,
-            userId,
-            memberIds
-        });
+        // Handle specific error types
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
 
-        res.json(channel);
-    } catch (error) {
-        console.error('Error creating channel:', error);
-        res.status(500).json({ error: 'Failed to create channel' });
+        // Default to 500 for unexpected errors
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 
@@ -27,7 +34,21 @@ export async function getUserChannels(req: Request, res: Response) {
         const channels = await channelService.getUserChannels(userId);
         res.json(channels);
     } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        console.error('[ChannelController] Error getting channels:', error);
+
+        // Handle specific error types
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        // Default to 500 for unexpected errors
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 
@@ -38,18 +59,65 @@ export async function getChannelById(req: Request, res: Response) {
     try {
         const channel = await channelService.getChannelById(channelId);
         if (!channel) {
-            return res.status(404).json({ error: "Channel not found" });
+            return res.status(404).json({ error: 'Channel not found' });
         }
-
-        // Check if user is a member of the channel
-        const isMember = channel.members.some(member => member.id === userId);
-        if (!isMember && channel.type !== "PUBLIC") {
-            return res.status(403).json({ error: "Not authorized to view this channel" });
-        }
-
         res.json(channel);
     } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        console.error('[ChannelController] Error getting channel by id:', error);
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
+
+export async function getChannelMessages(req: Request, res: Response) {
+    const { channelId } = req.params;
+    const userId = (req as any).userId;
+
+    try {
+        const messages = await channelService.getChannelMessages(channelId, userId);
+        res.json(messages);
+    } catch (error: any) {
+        console.error('[ChannelController] Error getting channel messages:', error);
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Internal server error' });
+    }
+}
+
+export async function getThreadMessages(req: Request, res: Response) {
+    const { messageId } = req.params;
+    const userId = (req as any).userId;
+
+    try {
+        const messages = await channelService.getThreadMessages(messageId, userId);
+        res.json(messages);
+    } catch (error: any) {
+        console.error('[ChannelController] Error getting thread messages:', error);
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 
@@ -58,19 +126,20 @@ export async function joinChannel(req: Request, res: Response) {
     const userId = (req as any).userId;
 
     try {
-        const channel = await channelService.getChannelById(channelId);
-        if (!channel) {
-            return res.status(404).json({ error: "Channel not found" });
-        }
-
-        if (channel.type === "PRIVATE") {
-            return res.status(403).json({ error: "Cannot join private channel" });
-        }
-
-        const updatedChannel = await channelService.addMemberToChannel(channelId, userId);
-        res.json(updatedChannel);
+        const channel = await channelService.addMemberToChannel(channelId, userId);
+        res.json(channel);
     } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        console.error('[ChannelController] Error joining channel:', error);
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 
@@ -79,18 +148,19 @@ export async function leaveChannel(req: Request, res: Response) {
     const userId = (req as any).userId;
 
     try {
-        const channel = await channelService.getChannelById(channelId);
-        if (!channel) {
-            return res.status(404).json({ error: "Channel not found" });
-        }
-
-        if (channel.createdBy === userId) {
-            return res.status(400).json({ error: "Channel creator cannot leave" });
-        }
-
-        await channelService.removeMemberFromChannel(channelId, userId);
-        res.json({ message: "Successfully left channel" });
+        const channel = await channelService.removeMemberFromChannel(channelId, userId);
+        res.json(channel);
     } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        console.error('[ChannelController] Error leaving channel:', error);
+        if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
+            return res.status(401).json({ error: error.message });
+        }
+        if (error.message?.includes('permission') || error.message?.includes('forbidden')) {
+            return res.status(403).json({ error: error.message });
+        }
+        if (error.message?.includes('validation') || error.message?.includes('required') || error.message?.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+        res.status(500).json({ error: 'Internal server error' });
     }
 }

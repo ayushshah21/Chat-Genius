@@ -7,7 +7,21 @@ export async function getChannelMessages(req: Request, res: Response) {
         const messages = await messageService.getChannelMessages(channelId);
         res.json(messages);
     } catch (error: any) {
-        res.status(400).json({ error: error.message });
+        console.error('[MessageController] Error getting channel messages:', error);
+
+        if (error.name === 'UnauthorizedError' || error.message.includes('unauthorized')) {
+            return res.status(401).json({ error: 'Unauthorized access' });
+        }
+
+        if (error.name === 'ForbiddenError' || error.message.includes('forbidden')) {
+            return res.status(403).json({ error: 'Forbidden access' });
+        }
+
+        if (error.name === 'ValidationError' || error.message.includes('invalid')) {
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 

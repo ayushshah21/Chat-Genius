@@ -3,7 +3,13 @@ import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
-export async function createChannel(data: any) {
+interface CreateChannelData {
+    name: string;
+    userId: string;
+    type?: 'PUBLIC' | 'PRIVATE';
+}
+
+export async function createChannel(data: CreateChannelData) {
     const channel = await prisma.channel.create({
         data: {
             name: data.name,
@@ -124,4 +130,154 @@ export async function getAvailableUsers(currentUserId: string) {
             status: true
         }
     });
+}
+
+export async function getChannelMessages(channelId: string, userId: string) {
+    const messages = await prisma.message.findMany({
+        where: {
+            channelId,
+            parentId: null // Only get top-level messages
+        },
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                }
+            },
+            files: true,
+            reactions: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            },
+            replies: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true,
+                        }
+                    },
+                    files: true,
+                    reactions: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                    avatarUrl: true
+                                }
+                            }
+                        }
+                    }
+                },
+                orderBy: {
+                    createdAt: 'asc'
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    });
+
+    // Transform reactions into the expected format
+    const formattedMessages = messages.map(message => ({
+        ...message,
+        reactions: message.reactions.reduce((acc, reaction) => {
+            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+            if (existingReaction) {
+                existingReaction.users.push(reaction.user);
+            } else {
+                acc.push({
+                    emoji: reaction.emoji,
+                    users: [reaction.user]
+                });
+            }
+            return acc;
+        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>),
+        replies: message.replies.map(reply => ({
+            ...reply,
+            reactions: reply.reactions.reduce((acc, reaction) => {
+                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                if (existingReaction) {
+                    existingReaction.users.push(reaction.user);
+                } else {
+                    acc.push({
+                        emoji: reaction.emoji,
+                        users: [reaction.user]
+                    });
+                }
+                return acc;
+            }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
+        }))
+    }));
+
+    return formattedMessages;
+}
+
+export async function getThreadMessages(messageId: string, userId: string) {
+    const messages = await prisma.message.findMany({
+        where: {
+            parentId: messageId
+        },
+        include: {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                }
+            },
+            files: true,
+            reactions: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            avatarUrl: true
+                        }
+                    }
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'asc'
+        }
+    });
+
+    // Transform reactions into the expected format
+    const formattedMessages = messages.map(message => ({
+        ...message,
+        reactions: message.reactions.reduce((acc, reaction) => {
+            const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+            if (existingReaction) {
+                existingReaction.users.push(reaction.user);
+            } else {
+                acc.push({
+                    emoji: reaction.emoji,
+                    users: [reaction.user]
+                });
+            }
+            return acc;
+        }, [] as Array<{ emoji: string; users: Array<{ id: string; name: string | null; email: string; avatarUrl: string | null; }> }>)
+    }));
+
+    return formattedMessages;
 } 
