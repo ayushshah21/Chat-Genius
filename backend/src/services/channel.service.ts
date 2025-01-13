@@ -3,6 +3,13 @@ import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
+const VALID_CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'DIRECT'] as const;
+type ChannelType = typeof VALID_CHANNEL_TYPES[number];
+
+function isValidChannelType(type: string): type is ChannelType {
+    return VALID_CHANNEL_TYPES.includes(type as ChannelType);
+}
+
 interface CreateChannelData {
     name: string;
     userId: string;
@@ -10,6 +17,10 @@ interface CreateChannelData {
 }
 
 export async function createChannel(data: CreateChannelData) {
+    if (!isValidChannelType(data.type || 'PUBLIC')) {
+        throw new Error(`Invalid channel type. Must be one of: ${VALID_CHANNEL_TYPES.join(', ')}`);
+    }
+
     const channel = await prisma.channel.create({
         data: {
             name: data.name,
@@ -22,8 +33,8 @@ export async function createChannel(data: CreateChannelData) {
             }
         },
         include: {
-            creator: true,
-            members: true
+            members: true,
+            creator: true
         }
     });
 
