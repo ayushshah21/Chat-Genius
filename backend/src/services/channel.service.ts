@@ -1,47 +1,60 @@
-import { PrismaClient, Channel } from "@prisma/client";
+import { PrismaClient, Channel, ChannelType } from "@prisma/client";
 import { getIO } from '../socket/socket.service';
 
 const prisma = new PrismaClient();
 
-const VALID_CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'DIRECT'] as const;
-type ChannelType = typeof VALID_CHANNEL_TYPES[number];
-
-function isValidChannelType(type: string): type is ChannelType {
-    return VALID_CHANNEL_TYPES.includes(type as ChannelType);
-}
-
 interface CreateChannelData {
     name: string;
     userId: string;
-    type?: 'PUBLIC' | 'PRIVATE';
+    type?: ChannelType;
 }
 
 export async function createChannel(data: CreateChannelData) {
-    if (!isValidChannelType(data.type || 'PUBLIC')) {
-        throw new Error(`Invalid channel type. Must be one of: ${VALID_CHANNEL_TYPES.join(', ')}`);
-    }
-
-    const channel = await prisma.channel.create({
-        data: {
-            name: data.name,
-            type: data.type || 'PUBLIC',
-            creator: {
-                connect: { id: data.userId }
-            },
-            members: {
-                connect: [{ id: data.userId }]
-            }
-        },
-        include: {
-            members: true,
-            creator: true
-        }
+    console.log('[ChannelService] Creating channel with data:', {
+        name: data.name,
+        type: data.type,
+        userId: data.userId
     });
 
-    // Emit socket event for new channel
-    getIO().emit('new_channel', channel);
+    try {
+        const channel = await prisma.channel.create({
+            data: {
+                name: data.name,
+                type: data.type || "PUBLIC",
+                creator: {
+                    connect: { id: data.userId }
+                },
+                members: {
+                    connect: [{ id: data.userId }]
+                }
+            },
+            include: {
+                members: true,
+                creator: true
+            }
+        });
 
-    return channel;
+        console.log('[ChannelService] Successfully created channel:', {
+            id: channel.id,
+            name: channel.name,
+            type: channel.type
+        });
+
+        // Emit socket event for new channel
+        getIO().emit('new_channel', channel);
+
+        return channel;
+    } catch (error) {
+        console.error('[ChannelService] Error in channel creation:', {
+            error,
+            data: {
+                name: data.name,
+                type: data.type,
+                userId: data.userId
+            }
+        });
+        throw error;
+    }
 }
 
 export async function getChannelById(channelId: string) {
