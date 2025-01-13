@@ -27,7 +27,8 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
     'https://chat-genius-pied.vercel.app',
     'https://chat-genius-fzev9646z-ayushshah21s-projects.vercel.app',
-    'https://chat-genius-git-main-ayushshah21s-projects.vercel.app'
+    'https://chat-genius-git-main-ayushshah21s-projects.vercel.app',
+    'https://chat-genius-git-ai-features-clean-ayushshah21s-projects.vercel.app'
   ]
   : [frontendUrl, 'http://localhost:5173'];
 
