@@ -55,17 +55,24 @@ export function setupSocketIO(server: Server) {
             if (token) {
                 const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
 
-                if (disconnectTimeouts[decoded.userId]) {
-                    clearTimeout(disconnectTimeouts[decoded.userId]);
-                    delete disconnectTimeouts[decoded.userId];
-                }
+                // Check if user exists before updating status
+                const userExists = await prisma.user.findUnique({
+                    where: { id: decoded.userId }
+                });
 
-                if (!connectedUsers.has(decoded.userId)) {
-                    await userService.updateUserStatus(decoded.userId, 'online');
-                }
+                if (userExists) {
+                    if (disconnectTimeouts[decoded.userId]) {
+                        clearTimeout(disconnectTimeouts[decoded.userId]);
+                        delete disconnectTimeouts[decoded.userId];
+                    }
 
-                connectedUsers.add(decoded.userId);
-                socket.data.userId = decoded.userId;
+                    if (!connectedUsers.has(decoded.userId)) {
+                        await userService.updateUserStatus(decoded.userId, 'online');
+                    }
+
+                    connectedUsers.add(decoded.userId);
+                    socket.data.userId = decoded.userId;
+                }
             }
         } catch (error) {
             console.error('[Presence] Error handling user presence:', error);
@@ -247,7 +254,7 @@ export function setupSocketIO(server: Server) {
                             const dmRoomId = [decoded.userId, data.dmUserId].sort().join(':');
                             io.to(`dm:${dmRoomId}`).emit('new_dm', responseMessage);
                         }
-                    }, 500);
+                    }, 200);
                 }
 
                 // Broadcast original message

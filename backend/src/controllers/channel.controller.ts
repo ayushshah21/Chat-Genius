@@ -2,14 +2,25 @@ import { Request, Response } from "express";
 import * as channelService from "../services/channel.service";
 
 export async function createChannel(req: Request, res: Response) {
-    const { name, description } = req.body;
+    const { name, type } = req.body;
     const userId = (req as any).userId;
 
+    console.log('[ChannelController] Received create channel request:', {
+        body: req.body,
+        extractedData: { name, type, userId },
+        contentType: req.headers['content-type']
+    });
+
     try {
-        const channel = await channelService.createChannel({ name, userId });
+        const channel = await channelService.createChannel({ name, type, userId });
+        console.log('[ChannelController] Channel created successfully:', channel);
         res.status(201).json(channel);
     } catch (error: any) {
-        console.error('[ChannelController] Error creating channel:', error);
+        console.error('[ChannelController] Error creating channel:', {
+            error,
+            stack: error.stack,
+            body: req.body
+        });
 
         // Handle specific error types
         if (error.message?.includes('unauthorized') || error.message?.includes('authentication')) {
