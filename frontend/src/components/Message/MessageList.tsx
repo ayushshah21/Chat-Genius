@@ -176,7 +176,6 @@ export default function MessageList({
     const fetchMessages = async () => {
       try {
         if (channelId) {
-          // Join both the regular channel room and the formatted channel room
           socket.emit("join_channel", channelId);
           socket.emit("join_channel", `channel_${channelId}`);
 
@@ -185,7 +184,10 @@ export default function MessageList({
           );
           setMessages(response.data);
           if (!highlightMessageId) {
-            setInitialScrollDone(true);
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              setInitialScrollDone(true);
+            }, 100);
           }
         } else if (dmUserId) {
           socket.emit("join_dm", dmUserId);
@@ -195,7 +197,10 @@ export default function MessageList({
           );
           setMessages(response.data);
           if (!highlightMessageId) {
-            setInitialScrollDone(true);
+            setTimeout(() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              setInitialScrollDone(true);
+            }, 100);
           }
         }
       } catch (error) {
@@ -331,8 +336,6 @@ export default function MessageList({
     </div>
   );
 }
-
-
 
 const MessageItem = React.forwardRef<
   HTMLDivElement,
