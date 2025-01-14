@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 
+
 // Load environment variables from .env.development
 const envPath = path.resolve(__dirname, '../../.env.development');
 console.log('Loading environment from:', envPath);
@@ -16,7 +17,15 @@ if (result.error) {
 }
 
 // Import AI service after environment is loaded
-import { aiService } from '../services/ai.service';
+import { PrismaClient } from '@prisma/client';
+import { AIService } from '../services/ai.service';
+import { ConfigService } from '@nestjs/config';
+import { VectorService } from '../services/vector.service';
+import { PrismaService } from '../services/prisma.service';
+
+const prisma = new PrismaClient();
+const aiService = new AIService(new ConfigService(), new VectorService(new ConfigService(), new PrismaService()));
+
 
 async function testAvatarResponse() {
     console.log("Starting Avatar Response Test");

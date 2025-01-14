@@ -60,7 +60,7 @@ async function testContextSummarization() {
         // 3. Test context summarization
         console.log("\n3️⃣ Testing context summarization...");
         try {
-            await contextService.updateContextWithSummary(testChannel.id, "channel");
+            await contextService.updateContextWithBatchSummaries(testChannel.id, "channel", []);
             console.log("✅ Context summarization completed");
         } catch (error: any) {
             console.warn("⚠️ Context summarization failed, but continuing test:", error.message);

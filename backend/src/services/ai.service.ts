@@ -1,227 +1,222 @@
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import OpenAI from 'openai';
+import { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import { VectorService } from './vector.service';
 
-class AIService {
-    private bedrockClient: BedrockRuntimeClient;
-    private modelId: string;
+@Injectable()
+export class AIService {
+    private openai: OpenAI;
     private maxTokens: number;
+    private vectorService: VectorService;
 
-    constructor() {
-        // Initialize the Bedrock client
-        this.bedrockClient = new BedrockRuntimeClient({
-            region: process.env.AWS_BEDROCK_REGION || 'us-east-1',
-            credentials: {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
-            }
+    constructor(
+        private configService: ConfigService,
+        vectorService: VectorService
+    ) {
+        const openaiApiKey = this.configService.get<string>('OPENAI_API_KEY');
+        if (!openaiApiKey) {
+            throw new Error('OPENAI_API_KEY is required');
+        }
+
+        this.openai = new OpenAI({
+            apiKey: openaiApiKey
         });
 
-        // Log configuration for debugging
-        console.log("AI Service Configuration:");
-        console.log("Region:", process.env.AWS_BEDROCK_REGION || 'us-east-1');
-        console.log("Model ID:", process.env.AI_MODEL_ID);
-        console.log("Access Key ID:", process.env.AWS_ACCESS_KEY_ID?.slice(0, 5) + "...");
-        console.log("Has Secret Key:", !!process.env.AWS_SECRET_ACCESS_KEY);
-
-        // Store model ID for use in requests
-        this.modelId = process.env.AI_MODEL_ID || 'mistral.mistral-large-2402-v1:0';
-        console.log("Using Model ID:", this.modelId);
-        console.log("Using Region:", process.env.AWS_BEDROCK_REGION || 'us-east-1');
-
-        this.maxTokens = parseInt(process.env.AI_MAX_TOKENS || "4000");
+        this.maxTokens = this.configService.get<number>('AI_MAX_TOKENS') || 4000;
+        this.vectorService = vectorService;
     }
 
     /**
-     * Generate an AI response using AWS Bedrock
-     * @param prompt The prompt to send to the AI
-     * @param context Optional conversation history
-     * @returns The AI-generated response
+     * Generate a response using the OpenAI API
      */
     async generateResponse(prompt: string, context?: string): Promise<string> {
-        try {
-            // Log the request details
-            console.log("\nMaking request to Bedrock:");
-            console.log("Model ID:", this.modelId);
-            console.log("Region:", this.bedrockClient.config.region);
+        const maxRetries = 3;
+        const timeoutDuration = 60000; // 60 seconds
+        let attempt = 1;
 
-            // Format input based on Mistral's requirements
-            const input = {
-                messages: [
-                    ...(context ? [{ role: "user", content: context }] : []),
-                    { role: "user", content: prompt }
-                ],
-                max_tokens: this.maxTokens,
-                temperature: 0.7,
-                top_p: 0.9,
-            };
+        while (attempt <= maxRetries) {
+            try {
+                console.log(`[AIService] Making request to OpenAI (Attempt ${attempt}/${maxRetries}):`);
 
-            // Log the formatted input
-            console.log("Request Input:", JSON.stringify(input, null, 2));
+                const messages: ChatCompletionMessageParam[] = [];
+                if (context) {
+                    messages.push({
+                        role: 'system',
+                        content: `Context:\n${context}`
+                    });
+                }
+                messages.push({
+                    role: 'user',
+                    content: prompt
+                });
 
-            const command = new InvokeModelCommand({
-                modelId: this.modelId,
-                body: JSON.stringify(input),
-                contentType: "application/json",
-                accept: "application/json",
-            });
+                const completion = await Promise.race([
+                    this.openai.chat.completions.create({
+                        model: 'gpt-4o-mini',
+                        messages,
+                        max_tokens: this.maxTokens,
+                        temperature: 0.7,
+                        top_p: 0.9
+                    }),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error(`OpenAI request timed out after ${timeoutDuration / 1000} seconds`)),
+                            timeoutDuration)
+                    )
+                ]) as OpenAI.Chat.ChatCompletion;
 
-            const response = await this.bedrockClient.send(command);
-            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+                return completion.choices[0].message.content || '';
 
-            // Log the raw response for debugging
-            console.log("Raw Response:", JSON.stringify(responseBody, null, 2));
+            } catch (error) {
+                const isTimeout = error instanceof Error && error.message.includes('timed out');
 
-            // Handle different response formats
-            if (responseBody.choices?.[0]?.message?.content) {
-                // Mistral format (similar to OpenAI)
-                return responseBody.choices[0].message.content;
-            } else if (responseBody.generation) {
-                // Claude format
-                return responseBody.generation;
-            } else if (responseBody.outputs?.[0]?.text) {
-                // Alternative format
-                return responseBody.outputs[0].text;
-            } else if (responseBody.completion) {
-                // Another alternative format
-                return responseBody.completion;
-            } else {
-                throw new Error(`Unexpected response format: ${JSON.stringify(responseBody)}`);
+                if (attempt === maxRetries || !isTimeout) {
+                    console.error('[AIService] Error generating response:', {
+                        error: error instanceof Error ? {
+                            name: error.name,
+                            message: error.message,
+                            stack: error.stack
+                        } : error,
+                        prompt,
+                        contextLength: context?.length,
+                        attempt,
+                        isTimeout
+                    });
+                    throw error;
+                }
+
+                console.log(`[AIService] Request timed out, retrying (${attempt}/${maxRetries})...`);
+                await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+                attempt++;
             }
-        } catch (error: any) {
-            // Enhanced error logging
-            console.error("Error generating AI response:", error);
-            if (error.message) console.error("Error message:", error.message);
-            if (error.$metadata) console.error("Error metadata:", error.$metadata);
-            throw new Error("Failed to generate AI response");
         }
+
+        throw new Error('Should not reach here');
     }
 
     /**
      * Generate a personality-aware response
-     * @param prompt The user's message
-     * @param userStyle The user's communication style/personality
-     * @param context Recent conversation history
      */
     async generatePersonalityResponse(
         prompt: string,
         userStyle: string,
         context?: string
     ): Promise<string> {
-        const systemMessage = `You are an AI assistant that communicates in the following style: ${userStyle}. 
-        Maintain this communication style while providing accurate and helpful responses.`;
+        console.log('[AIService] Generating personality response:', {
+            promptLength: prompt.length,
+            userStyle,
+            hasContext: !!context
+        });
 
         try {
-            const input = {
-                messages: [
-                    { role: "system", content: systemMessage },
-                    ...(context ? [{ role: "user", content: context }] : []),
-                    { role: "user", content: prompt }
-                ],
-                max_tokens: this.maxTokens,
-                temperature: 0.7,
-                top_p: 0.9,
-            };
+            // Get vector search results if we have context
+            let relevantContext = '';
+            if (context) {
+                const vectorResults = await this.vectorService.queryVectors(prompt, 5);
 
-            const command = new InvokeModelCommand({
-                modelId: this.modelId,
-                body: JSON.stringify(input),
-                contentType: "application/json",
-                accept: "application/json",
+                // Filter and format only the most relevant results
+                const filteredResults = vectorResults
+                    .filter(result => result.score >= 0.3)
+                    .slice(0, 3)  // Take only top 3 most relevant
+                    .sort((a, b) => new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime());
+
+                if (filteredResults.length > 0) {
+                    relevantContext = filteredResults
+                        .map(result => {
+                            const timeAgo = Math.floor((Date.now() - new Date(result.metadata.createdAt).getTime()) / (1000 * 60));
+                            return `[${timeAgo}m ago] ${result.metadata.userName}: ${result.pageContent}`;
+                        })
+                        .join('\n');
+                }
+            }
+
+            const messages: ChatCompletionMessageParam[] = [
+                {
+                    role: 'system',
+                    content: `You are an AI assistant that communicates in the following style: ${userStyle}.
+${relevantContext ? `\nRelevant context:\n${relevantContext}\n` : ''}
+${context ? `\nRecent conversation:\n${context}\n` : ''}
+
+Remember to:
+- Keep responses concise (2-3 sentences)
+- Stay focused on the current topic
+- Be direct and professional`
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ];
+
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages,
+                max_tokens: 250,  // Reduced from 1000 to prevent verbose responses
+                temperature: 0.7,
+                top_p: 0.9
             });
 
-            const response = await this.bedrockClient.send(command);
-            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+            let responseText = completion.choices[0].message.content || '';
 
-            // Log the raw response for debugging
-            console.log("Raw Response (Personality):", JSON.stringify(responseBody, null, 2));
+            // Clean up the response
+            responseText = responseText.trim()
+                .replace(/^Response:\s*/i, '')  // Remove any "Response:" prefix
+                .replace(/^Instructions:.*$/im, '')  // Remove any instruction lines
+                .replace(/^\d+\.\s.*$/gm, '')  // Remove any numbered points
+                .trim();
 
-            // Handle different response formats
-            if (responseBody.choices?.[0]?.message?.content) {
-                // Mistral format (similar to OpenAI)
-                return responseBody.choices[0].message.content;
-            } else if (responseBody.generation) {
-                // Claude format
-                return responseBody.generation;
-            } else if (responseBody.outputs?.[0]?.text) {
-                // Alternative format
-                return responseBody.outputs[0].text;
-            } else if (responseBody.completion) {
-                // Another alternative format
-                return responseBody.completion;
-            } else {
-                throw new Error(`Unexpected response format: ${JSON.stringify(responseBody)}`);
-            }
-        } catch (error: any) {
-            console.error("Error generating personality response:", error);
+            console.log('[AIService] Cleaned response:', responseText);
+            return responseText;
+        } catch (error) {
+            console.error('[AIService] Error generating personality response:', {
+                error: error instanceof Error ? {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                } : error
+            });
             throw new Error("Failed to generate personality response");
         }
     }
 
     /**
      * Analyze message to determine if AI should auto-respond
-     * @param message The message to analyze
-     * @param aiMentioned Whether the AI was explicitly mentioned
      */
     async shouldAutoRespond(message: string, aiMentioned: boolean): Promise<boolean> {
         if (aiMentioned) return true;
 
-        const systemMessage = `You are an AI assistant that analyzes messages to determine if they require an immediate response.
-        Respond with ONLY "true" or "false".`;
-
         try {
-            const input = {
-                messages: [
-                    { role: "system", content: systemMessage },
-                    { role: "user", content: `Does this message require an immediate response? Consider if it's a direct question, urgent, or explicitly requests information: "${message}"` }
-                ],
+            const messages: ChatCompletionMessageParam[] = [
+                {
+                    role: 'system',
+                    content: `You are an AI assistant that analyzes messages to determine if they require an immediate response.
+                    
+Question: Does this message require an immediate response? Consider if it's a direct question, urgent, or explicitly requests information:
+"${message}"
+
+Instructions: Respond with ONLY "true" or "false".`
+                }
+            ];
+
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages,
                 max_tokens: 10,
                 temperature: 0.1,
-                top_p: 0.9,
-            };
-
-            const command = new InvokeModelCommand({
-                modelId: this.modelId,
-                body: JSON.stringify(input),
-                contentType: "application/json",
-                accept: "application/json",
+                top_p: 0.9
             });
 
-            const response = await this.bedrockClient.send(command);
-            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-            // Log the raw response for debugging
-            console.log("Raw Response (AutoRespond):", JSON.stringify(responseBody, null, 2));
-
-            // Handle different response formats
-            let responseText = "";
-            if (responseBody.choices?.[0]?.message?.content) {
-                // Mistral format (similar to OpenAI)
-                responseText = responseBody.choices[0].message.content;
-            } else if (responseBody.generation) {
-                // Claude format
-                responseText = responseBody.generation;
-            } else if (responseBody.outputs?.[0]?.text) {
-                // Alternative format
-                responseText = responseBody.outputs[0].text;
-            } else if (responseBody.completion) {
-                // Another alternative format
-                responseText = responseBody.completion;
-            } else {
-                throw new Error(`Unexpected response format: ${JSON.stringify(responseBody)}`);
-            }
-
-            return responseText.toLowerCase().includes("true");
-        } catch (error: any) {
-            console.error("Error analyzing message:", error);
-            return false;
+            const responseText = completion.choices[0].message.content?.trim().toLowerCase() || '';
+            return responseText === 'true';
+        } catch (error) {
+            console.error("[AIService] Error in shouldAutoRespond:", error);
+            // Default to true if there's an error, to ensure messages aren't missed
+            return true;
         }
     }
 
     /**
      * Generate a response as the user's AI avatar
-     * @param prompt The incoming message to respond to
-     * @param userStyle The user's communication style/personality
-     * @param recentContext Recent messages from the conversation
-     * @param userContext Additional context about the user (preferences, expertise, etc.)
      */
     async generateAvatarResponse(
         prompt: string,
@@ -235,65 +230,213 @@ class AIService {
         }
     ): Promise<string> {
         try {
-            console.log("Generating avatar response...");
+            console.log("[AIService] Generating avatar response with context:", {
+                promptLength: prompt.length,
+                contextLength: recentContext.length,
+                userStyle,
+                userName: userContext.name
+            });
 
             // Format conversation history
             const formattedHistory = recentContext
                 .map(msg => `${msg.sender}: ${msg.content}`)
                 .join('\n');
 
-            // Create system message emphasizing conciseness
-            const systemMessage = `You are acting as ${userContext.name}, a ${userStyle}
+            const messages: ChatCompletionMessageParam[] = [
+                {
+                    role: 'system',
+                    content: `You are acting as ${userContext.name}, a ${userStyle}.
 Keep responses concise (2-3 sentences max unless specifically asked for details).
-Use their common phrases: ${userContext.commonPhrases?.join(', ') || 'Not specified'}
+Common phrases used: ${userContext.commonPhrases?.join(', ') || 'Not specified'}
 Communication style: ${userContext.preferences?.communicationStyle || 'Not specified'}
 Expertise: ${userContext.expertise?.join(', ') || 'Not specified'}
 
-Important: Be brief and impactful. Use short sentences. Only elaborate if explicitly asked.`;
+Important: Be brief and impactful. Use short sentences. Only elaborate if explicitly asked.
 
-            const input = {
-                messages: [
-                    { role: "system", content: systemMessage },
-                    { role: "user", content: `Recent conversation:\n${formattedHistory}` },
-                    { role: "user", content: `New message to respond to: ${prompt}\n\nRespond concisely while maintaining my style.` }
-                ],
+Recent conversation:
+${formattedHistory}
+
+Remember to:
+- Keep responses concise and natural
+- Speak in first person as ${userContext.name}
+- Stay focused on the current topic
+- Be direct and professional`
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ];
+
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages,
                 max_tokens: this.maxTokens,
                 temperature: 0.7,
-                top_p: 0.9,
-            };
-
-            const command = new InvokeModelCommand({
-                modelId: this.modelId,
-                body: JSON.stringify(input),
-                contentType: "application/json",
-                accept: "application/json",
+                top_p: 0.9
             });
 
-            const response = await this.bedrockClient.send(command);
-            const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+            let responseText = completion.choices[0].message.content || '';
 
-            // Log the raw response for debugging
-            console.log("Raw Response (Avatar):", JSON.stringify(responseBody, null, 2));
+            // Clean up the response
+            responseText = responseText.trim()
+                .replace(/^Response:\s*/i, '')
+                .replace(/^Instructions:.*$/im, '')
+                .replace(/^\d+\.\s.*$/gm, '')
+                .trim();
 
-            // Handle different response formats
-            if (responseBody.choices?.[0]?.message?.content) {
-                return responseBody.choices[0].message.content;
-            } else if (responseBody.generation) {
-                return responseBody.generation;
-            } else if (responseBody.outputs?.[0]?.text) {
-                return responseBody.outputs[0].text;
-            } else if (responseBody.completion) {
-                return responseBody.completion;
-            } else {
-                throw new Error(`Unexpected response format: ${JSON.stringify(responseBody)}`);
-            }
-        } catch (error: any) {
-            console.error("Error generating avatar response:", error);
-            if (error.message) console.error("Error message:", error.message);
-            if (error.$metadata) console.error("Error metadata:", error.$metadata);
+            console.log('[AIService] Final avatar response:', responseText);
+            return responseText;
+        } catch (error) {
+            console.error('[AIService] Error generating avatar response:', {
+                error: error instanceof Error ? {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                } : error
+            });
             throw new Error("Failed to generate avatar response");
         }
     }
-}
 
-export const aiService = new AIService(); 
+    /**
+     * Generate an enhanced personality response with context
+     */
+    async generateEnhancedPersonalityResponse(
+        prompt: string,
+        userStyle: string = 'casual',
+        userId: string,
+        currentChannelId?: string,
+        receiverId?: string
+    ): Promise<string> {
+        try {
+            console.log('[AIService] Generating enhanced personality response:', {
+                promptLength: prompt.length,
+                userStyle,
+                userId,
+                currentChannelId,
+                receiverId
+            });
+
+            // Get relevant context using vector search - get more results initially for better filtering
+            const vectorResults = await this.vectorService.queryVectors(prompt, 5);
+
+            // Filter results based on metadata and score
+            const filteredResults = vectorResults
+                .filter(result => {
+                    // Public channel messages
+                    if (result.metadata.type === 'channel') return true;
+
+                    // Current channel messages if in a channel
+                    if (currentChannelId && result.metadata.channelId === currentChannelId) return true;
+
+                    // DM messages if this is a DM
+                    if (receiverId && result.metadata.type === 'dm') {
+                        return result.metadata.userId === receiverId || result.metadata.userId === userId;
+                    }
+
+                    return false;
+                })
+                .filter(result => result.score >= 0.3)  // Apply score threshold
+                .slice(0, 3);  // Take only top 3 most relevant
+
+            // Format the context
+            let formattedContext = '';
+
+            // Add semantically similar messages first for better context
+            if (filteredResults && filteredResults.length > 0) {
+                formattedContext = filteredResults
+                    .sort((a, b) => new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime())
+                    .map(result => {
+                        const timeAgo = Math.floor((Date.now() - new Date(result.metadata.createdAt).getTime()) / (1000 * 60));
+                        const source = result.metadata.type === 'dm' ? 'DM' : `#${result.metadata.channelId}`;
+                        const relevanceMarker = result.score > 0.6 ? '🎯 ' : '';
+                        return `${relevanceMarker}[${timeAgo}m ago] [${source}] ${result.metadata.userName}: ${result.pageContent}`;
+                    })
+                    .join('\n');
+            }
+
+            const messages: ChatCompletionMessageParam[] = [
+                {
+                    role: 'system',
+                    content: `You are an AI assistant that communicates in the following style: ${userStyle}.
+${formattedContext ? `\nRelevant context:\n${formattedContext}\n` : ''}
+
+Remember to:
+- Keep responses concise (2-3 sentences)
+- Stay focused on the current topic
+- Be direct and professional
+- Reference specific details from context when relevant
+- Pay attention to messages marked with 🎯 as they are highly relevant`
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ];
+
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages,
+                max_tokens: 250,  // Reduced from 1000 to prevent verbose responses
+                temperature: 0.7,
+                top_p: 0.9
+            });
+
+            let responseText = completion.choices[0].message.content || '';
+
+            // Clean up the response
+            responseText = responseText.trim()
+                .replace(/^Response:\s*/i, '')
+                .replace(/^Instructions:.*$/im, '')
+                .replace(/^\d+\.\s.*$/gm, '')
+                .trim();
+
+            console.log('[AIService] Final enhanced response:', responseText);
+            return responseText;
+        } catch (error) {
+            console.error('[AIService] Error generating enhanced personality response:', {
+                error: error instanceof Error ? {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                } : error
+            });
+            throw new Error("Failed to generate enhanced personality response");
+        }
+    }
+
+    private formatRAGContext(context: any) {
+        let formatted = '';
+
+        // Safely handle relevant messages
+        if (context?.relevantMessages?.length > 0) {
+            formatted += '\nRelevant past messages:\n';
+            context.relevantMessages.forEach((msg: any) => {
+                formatted += `- ${msg.timeAgo}: ${msg.content}\n`;
+            });
+        }
+
+        // Safely handle user-specific messages
+        if (context?.userSpecificMessages?.length > 0) {
+            formatted += '\nYour past responses on similar topics:\n';
+            context.userSpecificMessages.forEach((msg: any) => {
+                formatted += `- ${msg.content}\n`;
+            });
+        }
+
+        // Safely handle topic groupings
+        if (context?.groupedTopics && Object.keys(context.groupedTopics).length > 0) {
+            formatted += '\nRelated conversation topics:\n';
+            Object.entries(context.groupedTopics).forEach(([topic, messages]: [string, any]) => {
+                formatted += `${topic}:\n`;
+                messages.forEach((msg: any) => {
+                    formatted += `- ${msg.content}\n`;
+                });
+            });
+        }
+
+        // If no context is available, return empty string
+        return formatted;
+    }
+} 

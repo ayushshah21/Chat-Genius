@@ -45,98 +45,192 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createChannel = createChannel;
 exports.getUserChannels = getUserChannels;
 exports.getChannelById = getChannelById;
+exports.getChannelMessages = getChannelMessages;
+exports.getThreadMessages = getThreadMessages;
 exports.joinChannel = joinChannel;
 exports.leaveChannel = leaveChannel;
 const channelService = __importStar(require("../services/channel.service"));
 function createChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
+        const { name, type } = req.body;
+        const userId = req.userId;
+        console.log('[ChannelController] Received create channel request:', {
+            body: req.body,
+            extractedData: { name, type, userId },
+            contentType: req.headers['content-type']
+        });
         try {
-            const { name, type, memberIds } = req.body;
-            const userId = req.userId;
-            const channel = yield channelService.createChannel({
-                name,
-                type,
-                userId,
-                memberIds
-            });
-            res.json(channel);
+            const channel = yield channelService.createChannel({ name, type, userId });
+            console.log('[ChannelController] Channel created successfully:', channel);
+            res.status(201).json(channel);
         }
         catch (error) {
-            console.error('Error creating channel:', error);
-            res.status(500).json({ error: 'Failed to create channel' });
+            console.error('[ChannelController] Error creating channel:', {
+                error,
+                stack: error.stack,
+                body: req.body
+            });
+            // Handle specific error types
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            // Default to 500 for unexpected errors
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 }
 function getUserChannels(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
         const userId = req.userId;
         try {
             const channels = yield channelService.getUserChannels(userId);
             res.json(channels);
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
+            console.error('[ChannelController] Error getting channels:', error);
+            // Handle specific error types
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            // Default to 500 for unexpected errors
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 }
 function getChannelById(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
         const { channelId } = req.params;
         const userId = req.userId;
         try {
             const channel = yield channelService.getChannelById(channelId);
             if (!channel) {
-                return res.status(404).json({ error: "Channel not found" });
-            }
-            // Check if user is a member of the channel
-            const isMember = channel.members.some(member => member.id === userId);
-            if (!isMember && channel.type !== "PUBLIC") {
-                return res.status(403).json({ error: "Not authorized to view this channel" });
+                return res.status(404).json({ error: 'Channel not found' });
             }
             res.json(channel);
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
+            console.error('[ChannelController] Error getting channel by id:', error);
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+}
+function getChannelMessages(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
+        const { channelId } = req.params;
+        const userId = req.userId;
+        try {
+            const messages = yield channelService.getChannelMessages(channelId, userId);
+            res.json(messages);
+        }
+        catch (error) {
+            console.error('[ChannelController] Error getting channel messages:', error);
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+}
+function getThreadMessages(req, res) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
+        const { messageId } = req.params;
+        const userId = req.userId;
+        try {
+            const messages = yield channelService.getThreadMessages(messageId, userId);
+            res.json(messages);
+        }
+        catch (error) {
+            console.error('[ChannelController] Error getting thread messages:', error);
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 }
 function joinChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
         const { channelId } = req.params;
         const userId = req.userId;
         try {
-            const channel = yield channelService.getChannelById(channelId);
-            if (!channel) {
-                return res.status(404).json({ error: "Channel not found" });
-            }
-            if (channel.type === "PRIVATE") {
-                return res.status(403).json({ error: "Cannot join private channel" });
-            }
-            const updatedChannel = yield channelService.addMemberToChannel(channelId, userId);
-            res.json(updatedChannel);
+            const channel = yield channelService.addMemberToChannel(channelId, userId);
+            res.json(channel);
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
+            console.error('[ChannelController] Error joining channel:', error);
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 }
 function leaveChannel(req, res) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d, _e, _f, _g;
         const { channelId } = req.params;
         const userId = req.userId;
         try {
-            const channel = yield channelService.getChannelById(channelId);
-            if (!channel) {
-                return res.status(404).json({ error: "Channel not found" });
-            }
-            if (channel.createdBy === userId) {
-                return res.status(400).json({ error: "Channel creator cannot leave" });
-            }
-            yield channelService.removeMemberFromChannel(channelId, userId);
-            res.json({ message: "Successfully left channel" });
+            const channel = yield channelService.removeMemberFromChannel(channelId, userId);
+            res.json(channel);
         }
         catch (error) {
-            res.status(400).json({ error: error.message });
+            console.error('[ChannelController] Error leaving channel:', error);
+            if (((_a = error.message) === null || _a === void 0 ? void 0 : _a.includes('unauthorized')) || ((_b = error.message) === null || _b === void 0 ? void 0 : _b.includes('authentication'))) {
+                return res.status(401).json({ error: error.message });
+            }
+            if (((_c = error.message) === null || _c === void 0 ? void 0 : _c.includes('permission')) || ((_d = error.message) === null || _d === void 0 ? void 0 : _d.includes('forbidden'))) {
+                return res.status(403).json({ error: error.message });
+            }
+            if (((_e = error.message) === null || _e === void 0 ? void 0 : _e.includes('validation')) || ((_f = error.message) === null || _f === void 0 ? void 0 : _f.includes('required')) || ((_g = error.message) === null || _g === void 0 ? void 0 : _g.includes('invalid'))) {
+                return res.status(400).json({ error: error.message });
+            }
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 }

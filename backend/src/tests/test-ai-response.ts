@@ -1,4 +1,12 @@
-import { aiService } from "../services/ai.service";
+import { PrismaClient } from '@prisma/client';
+import { AIService } from '../services/ai.service';
+import { ConfigService } from '@nestjs/config';
+import { VectorService } from '../services/vector.service';
+import { PrismaService } from '../services/prisma.service';
+
+const prisma = new PrismaClient();
+const aiService = new AIService(new ConfigService(), new VectorService(new ConfigService(), new PrismaService()));
+
 
 async function testAIResponse() {
     try {

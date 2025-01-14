@@ -15,30 +15,55 @@ exports.getUserChannels = getUserChannels;
 exports.addMemberToChannel = addMemberToChannel;
 exports.removeMemberFromChannel = removeMemberFromChannel;
 exports.getAvailableUsers = getAvailableUsers;
+exports.getChannelMessages = getChannelMessages;
+exports.getThreadMessages = getThreadMessages;
 const client_1 = require("@prisma/client");
 const socket_service_1 = require("../socket/socket.service");
 const prisma = new client_1.PrismaClient();
 function createChannel(data) {
     return __awaiter(this, void 0, void 0, function* () {
-        const channel = yield prisma.channel.create({
-            data: {
-                name: data.name,
-                type: data.type || 'PUBLIC',
-                creator: {
-                    connect: { id: data.userId }
-                },
-                members: {
-                    connect: [{ id: data.userId }]
-                }
-            },
-            include: {
-                creator: true,
-                members: true
-            }
+        console.log('[ChannelService] Creating channel with data:', {
+            name: data.name,
+            type: data.type,
+            userId: data.userId
         });
-        // Emit socket event for new channel
-        (0, socket_service_1.getIO)().emit('new_channel', channel);
-        return channel;
+        try {
+            const channel = yield prisma.channel.create({
+                data: {
+                    name: data.name,
+                    type: data.type || "PUBLIC",
+                    creator: {
+                        connect: { id: data.userId }
+                    },
+                    members: {
+                        connect: [{ id: data.userId }]
+                    }
+                },
+                include: {
+                    members: true,
+                    creator: true
+                }
+            });
+            console.log('[ChannelService] Successfully created channel:', {
+                id: channel.id,
+                name: channel.name,
+                type: channel.type
+            });
+            // Emit socket event for new channel
+            (0, socket_service_1.getIO)().emit('new_channel', channel);
+            return channel;
+        }
+        catch (error) {
+            console.error('[ChannelService] Error in channel creation:', {
+                error,
+                data: {
+                    name: data.name,
+                    type: data.type,
+                    userId: data.userId
+                }
+            });
+            throw error;
+        }
     });
 }
 function getChannelById(channelId) {
@@ -143,5 +168,146 @@ function getAvailableUsers(currentUserId) {
                 status: true
             }
         });
+    });
+}
+function getChannelMessages(channelId, userId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const messages = yield prisma.message.findMany({
+            where: {
+                channelId,
+                parentId: null // Only get top-level messages
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        avatarUrl: true,
+                    }
+                },
+                files: true,
+                reactions: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        }
+                    }
+                },
+                replies: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true,
+                            }
+                        },
+                        files: true,
+                        reactions: {
+                            include: {
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        email: true,
+                                        avatarUrl: true
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: 'asc'
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+        // Transform reactions into the expected format
+        const formattedMessages = messages.map(message => (Object.assign(Object.assign({}, message), { reactions: message.reactions.reduce((acc, reaction) => {
+                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                if (existingReaction) {
+                    existingReaction.users.push(reaction.user);
+                }
+                else {
+                    acc.push({
+                        emoji: reaction.emoji,
+                        users: [reaction.user]
+                    });
+                }
+                return acc;
+            }, []), replies: message.replies.map(reply => (Object.assign(Object.assign({}, reply), { reactions: reply.reactions.reduce((acc, reaction) => {
+                    const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                    if (existingReaction) {
+                        existingReaction.users.push(reaction.user);
+                    }
+                    else {
+                        acc.push({
+                            emoji: reaction.emoji,
+                            users: [reaction.user]
+                        });
+                    }
+                    return acc;
+                }, []) }))) })));
+        return formattedMessages;
+    });
+}
+function getThreadMessages(messageId, userId) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const messages = yield prisma.message.findMany({
+            where: {
+                parentId: messageId
+            },
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        avatarUrl: true,
+                    }
+                },
+                files: true,
+                reactions: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                                avatarUrl: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'asc'
+            }
+        });
+        // Transform reactions into the expected format
+        const formattedMessages = messages.map(message => (Object.assign(Object.assign({}, message), { reactions: message.reactions.reduce((acc, reaction) => {
+                const existingReaction = acc.find(r => r.emoji === reaction.emoji);
+                if (existingReaction) {
+                    existingReaction.users.push(reaction.user);
+                }
+                else {
+                    acc.push({
+                        emoji: reaction.emoji,
+                        users: [reaction.user]
+                    });
+                }
+                return acc;
+            }, []) })));
+        return formattedMessages;
     });
 }

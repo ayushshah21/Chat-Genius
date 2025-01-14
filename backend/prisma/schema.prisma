@@ -28,7 +28,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   // AI-related fields
-  communicationStyle String?  @default("professional")
+  communicationStyle String?  @default("casual")
   commonPhrases      String[] @default([])
   autoReplyEnabled   Boolean  @default(false)
   aiSettings         Json? // For additional AI-specific settings
