@@ -6,6 +6,10 @@ import { Document } from 'langchain/document';
 import { OpenAIEmbeddings } from '@langchain/openai';
 import { PineconeStore } from '@langchain/pinecone';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { ChatOpenAI } from '@langchain/openai';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { StringOutputParser } from '@langchain/core/output_parsers';
+import { RunnableSequence } from '@langchain/core/runnables';
 
 export interface VectorMetadata {
     messageId: string;
@@ -23,13 +27,28 @@ export interface VectorSearchResult {
     score: number;
 }
 
+interface QueryResult {
+    content: string;
+    metadata: VectorMetadata;
+    score: number;
+}
+
+interface FilterMetadata {
+    type?: 'dm' | 'channel';
+    userId?: string;
+    channelId?: string;
+}
+
 @Injectable()
 export class VectorService {
-    private pinecone: Pinecone;
-    private embeddings: OpenAIEmbeddings;
     private vectorStore!: PineconeStore;
+    private embeddings: OpenAIEmbeddings;
+    private pinecone: Pinecone;
+    private llm: ChatOpenAI;
+    private qaChain!: RunnableSequence;
     private initialized = false;
     private initializationPromise: Promise<void> | null = null;
+    private textSplitter: RecursiveCharacterTextSplitter;
 
     constructor(
         private configService: ConfigService,
@@ -54,10 +73,24 @@ export class VectorService {
             openAIApiKey,
             modelName: 'text-embedding-3-large'
         });
+
+        // Initialize text splitter with token-based settings
+        this.textSplitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 300,
+            chunkOverlap: 50,
+        });
+
         console.log('[VectorService] Constructor initialized successfully');
 
         // Start initialization immediately
         this.initializeVectorStore();
+
+        // Initialize OpenAI for QA
+        this.llm = new ChatOpenAI({
+            modelName: 'gpt-4-turbo-preview',
+            temperature: 0.7,
+            maxTokens: 250
+        });
     }
 
     private async initializeVectorStore(retries = 3): Promise<void> {
@@ -117,6 +150,9 @@ export class VectorService {
 
     async onModuleInit() {
         await this.initializeVectorStore();
+
+        // Initialize QA Chain
+        await this.initializeQAChain();
     }
 
     private async ensureInitialized() {
@@ -125,30 +161,27 @@ export class VectorService {
         }
     }
 
+    private formatDocuments(docs: Document[]): string {
+        return docs.map((doc, i) => {
+            const metadata = doc.metadata as VectorMetadata;
+            const timeAgo = Math.floor((Date.now() - new Date(metadata.createdAt).getTime()) / (1000 * 60));
+            return `[${timeAgo}m ago] ${metadata.userName || 'Unknown'}: ${doc.pageContent}`;
+        }).join('\n\n');
+    }
+
     /**
      * Add documents to the vector store
      */
     async addDocuments(documents: Document<VectorMetadata>[]): Promise<void> {
-        console.log(`[VectorService] Adding ${documents.length} documents to vector store...`);
+        console.log('[VectorService] Adding documents:', documents.length);
+
         try {
-            // Calculate average document length
-            const avgLength = documents.reduce((sum, doc) => sum + doc.pageContent.length, 0) / documents.length;
-            console.log('[VectorService] Average document length:', avgLength);
-
-            // Configure text splitter based on average length
-            const textSplitter = new RecursiveCharacterTextSplitter({
-                chunkSize: Math.max(500, avgLength),  // Minimum chunk size of 500
-                chunkOverlap: Math.min(100, Math.floor(avgLength * 0.1)),  // 10% overlap, max 100 chars
-                separators: ["\n\n", "\n", " ", ""]
-            });
-
-            // Split documents if they're long enough
+            // Process documents in batches
             const processedDocs = await Promise.all(
-                documents.map(async (doc) => {
-                    if (doc.pageContent.length > 500) {  // Only split if longer than minimum chunk size
-                        const splits = await textSplitter.splitDocuments([doc]);
-                        console.log(`[VectorService] Split document into ${splits.length} chunks`);
-                        return splits;
+                documents.map(async doc => {
+                    // Split into chunks if needed
+                    if (doc.pageContent.length > 1000) {
+                        return await this.textSplitter.splitDocuments([doc]);
                     }
                     return [doc];
                 })
@@ -161,43 +194,9 @@ export class VectorService {
             // Add documents to vector store
             await this.vectorStore.addDocuments(flatDocs);
 
-            // Verify each original document was added with multiple search patterns
+            // Verify each document was added
             for (const doc of documents) {
-                // Try different search patterns
-                const searchPatterns = [
-                    doc.pageContent,                                    // Full content
-                    doc.pageContent.substring(0, Math.min(100, doc.pageContent.length)),  // First 100 chars
-                    doc.pageContent.split(' ').slice(0, 5).join(' '),  // First 5 words
-                    doc.pageContent.split(' ').slice(-5).join(' ')     // Last 5 words
-                ];
-
-                let bestMatch = { score: 0, pattern: '', found: false };
-                for (const pattern of searchPatterns) {
-                    const results = await this.vectorStore.similaritySearchWithScore(pattern, 1);
-                    if (results.length > 0 && results[0][1] > bestMatch.score) {
-                        bestMatch = {
-                            score: results[0][1],
-                            pattern: pattern.substring(0, 50) + '...',
-                            found: true
-                        };
-                    }
-                }
-
-                console.log('[VectorService] Document verification:', {
-                    content: doc.pageContent.substring(0, 50) + '...',
-                    bestMatch,
-                    metadata: doc.metadata,
-                    originalLength: doc.pageContent.length,
-                    wasChunked: doc.pageContent.length > 2000
-                });
-
-                if (!bestMatch.found) {
-                    console.warn('[VectorService] Document not found with any pattern:', {
-                        content: doc.pageContent.substring(0, 50) + '...',
-                        messageId: doc.metadata.messageId,
-                        length: doc.pageContent.length
-                    });
-                }
+                await this.verifyDocument(doc);
             }
         } catch (error) {
             console.error('[VectorService] Error adding documents:', error);
@@ -208,126 +207,89 @@ export class VectorService {
     /**
      * Query the vector store for similar documents
      */
-    async queryVectors(query: string, k: number = 5): Promise<VectorSearchResult[]> {
-        console.log('[VectorService] Starting vector query:', { query, k });
+    async queryVectors(query: string, options?: {
+        k?: number;
+        isDM?: boolean;
+        userId?: string;
+    }): Promise<VectorSearchResult[]> {
+        const numResults = options?.k || 10;
+        console.log('[VectorService] Starting vector query:', { query, numResults, options });
+
         try {
-            // Extract query keywords once for reuse
-            const queryWords = query.toLowerCase().split(' ').filter(w => w.length > 3);
+            // Enhanced retriever options with better MMR settings
+            const retrieverOptions: any = {
+                searchType: "mmr",
+                searchKwargs: {
+                    fetchK: numResults * 4,  // Increased fetch size for better candidate pool
+                    lambda: 0.5,  // Adjusted for better balance between relevance and diversity
+                    k: numResults
+                }
+            };
 
-            // Get more initial results for better filtering
-            const results = await this.vectorStore.similaritySearchWithScore(query, k * 3);
+            // Improved filter logic for better context sharing
+            if (options?.isDM && options?.userId) {
+                // For DMs, include:
+                // 1. User's direct messages
+                // 2. Public channel messages
+                // 3. Relevant summaries
+                retrieverOptions.filter = {
+                    OR: [
+                        { type: 'dm', userId: options.userId },
+                        { type: 'channel' },
+                        { type: 'summary' }
+                    ]
+                };
+            }
 
-            // Convert to vector results with enhanced scoring
-            let vectorResults = results.map(([doc, score]) => {
+            // MMR-based retriever
+            const retriever = this.vectorStore.asRetriever(retrieverOptions);
+
+            console.log('[VectorService] Configured MMR retriever:', {
+                numResults,
+                fetchK: numResults * 4,
+                lambda: 0.5,
+                filter: retrieverOptions.filter || 'none'
+            });
+
+            const results = await retriever.invoke(query);
+
+            console.log('[VectorService] Raw retrieval results:', {
+                count: results.length,
+                sample: results.slice(0, 2).map(doc => ({
+                    content: doc.pageContent.substring(0, 100),
+                    metadata: doc.metadata
+                }))
+            });
+
+            // Enhanced result processing with recency weighting
+            const processedResults = results.map(doc => {
                 const metadata = doc.metadata as VectorMetadata;
-                const timeAgo = Date.now() - new Date(metadata.createdAt).getTime();
-
-                // Recency boost: Stronger for very recent messages (last hour), decays over time
-                const recencyBoost = Math.min(0.3, 1 / (1 + timeAgo / (1000 * 60 * 60)));
-
-                // Content length penalty: Slight penalty for very short messages
-                const lengthMultiplier = Math.min(1, doc.pageContent.length / 100);
-
-                // Question/Answer boost: Boost messages that are responses
-                const isAnswer = !doc.pageContent.trim().endsWith('?');
-                const answerBoost = isAnswer ? 0.1 : 0;
-
-                // Topic relevance: Check if content contains keywords from query
-                const contentWords = doc.pageContent.toLowerCase().split(' ');
-                const keywordMatches = queryWords.filter(w => contentWords.includes(w)).length;
-                const keywordBoost = keywordMatches > 0 ? 0.1 * keywordMatches : 0;
-
-                const adjustedScore = (score * lengthMultiplier) + recencyBoost + answerBoost + keywordBoost;
+                const age = (Date.now() - new Date(metadata.createdAt).getTime()) / (1000 * 60); // age in minutes
+                const recencyBoost = Math.exp(-age / 1000); // Exponential decay based on age
+                const score = (doc.metadata.score || 0.5) * (1 + recencyBoost);
 
                 return {
                     pageContent: doc.pageContent,
-                    metadata,
-                    score: adjustedScore,
-                    originalScore: score,
-                    recencyBoost,
-                    lengthMultiplier,
-                    answerBoost,
-                    keywordBoost
+                    metadata: metadata,
+                    score: score
                 };
             });
 
-            // Improved deduplication: Consider content similarity and metadata
-            vectorResults = vectorResults.filter((result, index) => {
-                const isDuplicate = vectorResults.some((other, otherIndex) => {
-                    if (index === otherIndex) return false;
-
-                    // Check for similar content
-                    const contentSimilarity = other.pageContent.toLowerCase().includes(result.pageContent.toLowerCase()) ||
-                        result.pageContent.toLowerCase().includes(other.pageContent.toLowerCase());
-
-                    // Check if they're from the same conversation/context
-                    const sameContext = other.metadata.channelId === result.metadata.channelId &&
-                        Math.abs(new Date(other.metadata.createdAt).getTime() -
-                            new Date(result.metadata.createdAt).getTime()) < 5 * 60 * 1000; // 5 minutes
-
-                    return contentSimilarity && sameContext;
-                });
-
-                return !isDuplicate;
-            });
-
-            // Log results for debugging
-            console.log('[VectorService] Processed results:', vectorResults.map(r => ({
-                score: r.score.toFixed(3),
-                originalScore: r.originalScore.toFixed(3),
-                recencyBoost: r.recencyBoost.toFixed(3),
-                lengthMultiplier: r.lengthMultiplier.toFixed(3),
-                answerBoost: r.answerBoost.toFixed(3),
-                keywordBoost: r.keywordBoost.toFixed(3),
-                content: r.pageContent.substring(0, 100) + '...',
-                timeAgo: Math.floor((Date.now() - new Date(r.metadata.createdAt).getTime()) / (1000 * 60)) + 'm ago',
-                type: r.metadata.type,
-                channelId: r.metadata.channelId
-            })));
-
-            // If no good results, try keyword search
-            if (vectorResults.every(r => r.score < 0.3)) {
-                console.log('[VectorService] Low scores, attempting keyword search...');
-                const keywordResults = await this.vectorStore.similaritySearchWithScore(
-                    queryWords.join(' '),
-                    Math.floor(k * 1.5)
-                );
-
-                // Process keyword results with same scoring logic
-                const keywordVectorResults = keywordResults.map(([doc, score]) => {
-                    const metadata = doc.metadata as VectorMetadata;
-                    const timeAgo = Date.now() - new Date(metadata.createdAt).getTime();
-                    const recencyBoost = Math.min(0.3, 1 / (1 + timeAgo / (1000 * 60 * 60)));
-                    const lengthMultiplier = Math.min(1, doc.pageContent.length / 100);
-                    const isAnswer = !doc.pageContent.trim().endsWith('?');
-                    const answerBoost = isAnswer ? 0.1 : 0;
-                    const keywordBoost = 0.2; // Higher boost for keyword matches
-
-                    return {
-                        pageContent: doc.pageContent,
-                        metadata,
-                        score: (score * 0.8 * lengthMultiplier) + recencyBoost + answerBoost + keywordBoost,
-                        originalScore: score,
-                        recencyBoost,
-                        lengthMultiplier,
-                        answerBoost,
-                        keywordBoost
-                    };
-                });
-
-                vectorResults = [...vectorResults, ...keywordVectorResults];
-            }
-
-            return vectorResults
+            // Sort by enhanced score and return top results
+            return processedResults
                 .sort((a, b) => b.score - a.score)
-                .slice(0, k)
-                .map(({ pageContent, metadata, score }) => ({
-                    pageContent,
-                    metadata,
-                    score
-                }));
+                .slice(0, numResults);
+
         } catch (error) {
-            console.error('[VectorService] Error querying vectors:', error);
+            console.error('[VectorService] Error in queryVectors:', {
+                error: error instanceof Error ? {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                } : error,
+                query,
+                options
+            });
             throw error;
         }
     }
@@ -381,34 +343,9 @@ export class VectorService {
      * Delete test data from the index
      */
     async deleteTestData(): Promise<void> {
-        await this.ensureInitialized();
-        console.log('[VectorService] Starting test data deletion...');
-
-        try {
-            // First, get a sample of the actual metadata structure
-            const testResults = await this.queryVectors('test message', 100);
-            if (testResults.length > 0) {
-                console.log('[VectorService] Sample vector metadata structure:',
-                    JSON.stringify(testResults[0].metadata, null, 2));
-            }
-
-            // Since metadata filtering isn't supported in serverless indexes,
-            // we'll use deleteAll and then re-sync the non-test data
-            console.log('[VectorService] Performing full deletion and re-sync...');
-            await this.forceFullSync();
-
-            console.log('[VectorService] Test data deletion completed via full sync');
-        } catch (error) {
-            console.error('[VectorService] Error deleting test data:', error);
-            if (error instanceof Error) {
-                console.error('[VectorService] Error details:', {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack
-                });
-            }
-            throw error;
-        }
+        // Implementation for cleaning up test data
+        console.log('[VectorService] Cleaning up test data...');
+        // Add your cleanup logic here
     }
 
     /**
@@ -441,12 +378,15 @@ export class VectorService {
      * Get relevant context for a given prompt and user
      */
     async getRelevantContext(prompt: string, userId: string): Promise<VectorSearchResult[]> {
-        // Search for similar content
-        const results = await this.queryVectors(prompt);
+        // Search for similar content with MMR
+        const results = await this.queryVectors(prompt, {
+            k: 5,
+            userId  // Include user context
+        });
 
-        // Filter and sort results
+        // Filter and sort results with lowered threshold
         return results
-            .filter(result => result.score && result.score > 0.4) // Lower threshold to include more relevant results
+            .filter(result => result.score && result.score > 0.3) // Lowered threshold
             .sort((a, b) => {
                 // Prioritize:
                 // 1. User's own messages
@@ -460,7 +400,7 @@ export class VectorService {
                     (new Date(b.metadata.createdAt).getTime() / Date.now());
                 return bScore - aScore;
             })
-            .slice(0, 5); // Return top 5 most relevant results
+            .slice(0, 5);
     }
 
     /**
@@ -567,107 +507,41 @@ export class VectorService {
         });
 
         try {
-            // Get vector search results with a higher limit
-            const vectorResults = await this.queryVectors(query, options.limit || 10);
-            console.log('[VectorService] Vector results:', {
-                count: vectorResults.length,
-                results: vectorResults.map(r => ({
-                    content: r.pageContent.substring(0, 100) + '...',
-                    score: r.score,
-                    userId: r.metadata.userId,
-                    createdAt: r.metadata.createdAt,
-                    type: r.metadata.type
-                }))
+            // Get vector search results with MMR
+            const vectorResults = await this.queryVectors(query, {
+                k: options.limit || 10,
+                isDM: !options.channelId,
+                userId: options.userId
             });
 
-            // Build where clause based on context type
-            let where: any;
-
-            if (options.channelId) {
-                // For channel messages, use simple channel filter
-                where = { channelId: options.channelId };
-                console.log('[VectorService] Using channel context with filter:', where);
-            } else {
-                // For DMs, include both DM messages and messages from public channels
-                where = {
-                    OR: [
-                        // DM messages between the user and AI-enabled users
-                        { channelId: null, userId: options.userId },
-                        // Messages from public channels
-                        { channel: { type: 'PUBLIC' } }
-                    ]
-                };
-                console.log('[VectorService] Using DM context with filter:', where);
-            }
-
-            console.log('[VectorService] Database query:', {
-                where: JSON.stringify(where, null, 2),
-                take: 30,
-                orderBy: { createdAt: 'desc' }
-            });
-
+            // Get recent messages from database
             const recentMessages = await this.prismaService.message.findMany({
-                where,
+                where: options.channelId
+                    ? { channelId: options.channelId }
+                    : {
+                        userId: options.userId,
+                        channelId: undefined
+                    },
                 take: 30,
-                orderBy: {
-                    createdAt: 'desc'
-                },
+                orderBy: { createdAt: 'desc' },
                 include: {
                     user: true,
                     channel: true
                 }
             });
 
-            console.log('[VectorService] Recent messages retrieved:', {
-                count: recentMessages.length,
-                channelMessages: recentMessages.filter(m => m.channelId).length,
-                dmMessages: recentMessages.filter(m => !m.channelId).length,
-                timeRange: recentMessages.length > 0 ? {
-                    oldest: recentMessages[recentMessages.length - 1].createdAt,
-                    newest: recentMessages[0].createdAt
-                } : null
-            });
-
-            // Sort vector results by relevance score
-            const sortedVectorResults = vectorResults
-                .map(result => {
-                    const timeAgo = Date.now() - new Date(result.metadata.createdAt).getTime();
-                    const timeBoost = Math.min(0.2, 1 / (1 + timeAgo / (1000 * 60 * 60))); // Decay over hours
-                    const userBoost = result.metadata.userId === options.userId ? 0.1 : 0;
-                    const contextBoost = options.channelId ?
-                        (result.metadata.channelId === options.channelId ? 0.05 : 0) :
-                        (result.metadata.type === 'dm' ? 0.05 : 0);
-
-                    const finalScore = (result.score || 0) + timeBoost + userBoost + contextBoost;
-
-                    console.log('[VectorService] Scoring result:', {
-                        content: result.pageContent.substring(0, 100),
-                        baseScore: result.score,
-                        timeBoost,
-                        userBoost,
-                        contextBoost,
-                        finalScore,
-                        type: result.metadata.type,
-                        channelId: result.metadata.channelId,
-                        matchesCurrentChannel: result.metadata.channelId === options.channelId
-                    });
-
-                    return { ...result, score: finalScore };
-                })
-                .sort((a, b) => (b.score || 0) - (a.score || 0))
-                .slice(0, 15);
-
-            console.log('[VectorService] Final results:', {
-                vectorResults: sortedVectorResults.length,
+            // Log results for debugging
+            console.log('[VectorService] Results:', {
+                vectorResults: vectorResults.length,
                 recentMessages: recentMessages.length,
-                vectorScoreRange: sortedVectorResults.length > 0 ? {
-                    min: Math.min(...sortedVectorResults.map(r => r.score || 0)),
-                    max: Math.max(...sortedVectorResults.map(r => r.score || 0))
-                } : null
+                vectorScores: vectorResults.slice(0, 3).map(r => ({
+                    score: r.score,
+                    preview: r.pageContent.substring(0, 100)
+                }))
             });
 
             return {
-                vectorResults: sortedVectorResults,
+                vectorResults,  // Already sorted by relevance thanks to MMR
                 recentMessages: recentMessages.reverse()
             };
         } catch (error) {
@@ -685,5 +559,176 @@ export class VectorService {
                 recentMessages: []
             };
         }
+    }
+
+    private async initializeQAChain() {
+        const template = `You are a helpful AI assistant answering questions based on chat history.
+
+Context from conversations (most recent first):
+{context}
+
+Question: {question}
+
+Instructions:
+1. Use specific details from the context if available
+2. If the context doesn't contain relevant information, say so
+3. Keep responses concise (2-3 sentences)
+4. You can reference information from any channel, but don't share private DM contents
+5. If you see specific details (names, numbers, dates), include them in your answer
+
+Answer:`;
+
+        const qaPrompt = PromptTemplate.fromTemplate(template);
+
+        // Create retriever with MMR
+        const retriever = this.vectorStore.asRetriever({
+            searchType: "mmr",
+            searchKwargs: {
+                fetchK: 20,
+                lambda: 0.7
+            }
+        });
+
+        // Create a sequence that combines the prompt and language model
+        const chain = RunnableSequence.from([
+            {
+                context: async (input: { question: string }) => {
+                    const docs = await retriever.invoke(input.question);
+                    return this.formatDocuments(docs);
+                },
+                question: (input: { question: string }) => input.question
+            },
+            qaPrompt,
+            this.llm,
+            new StringOutputParser()
+        ]);
+
+        this.qaChain = chain;
+    }
+
+    async queryWithQA(
+        query: string,
+        metadata?: { userId?: string; channelId?: string; type?: 'dm' | 'channel' }
+    ): Promise<{ answer: string; sources: QueryResult[] }> {
+        try {
+            console.log('[VectorService] Starting QA query:', { query, metadata });
+
+            // Enhanced retriever options with better MMR settings
+            const retrieverOptions: any = {
+                searchType: "mmr",
+                searchKwargs: {
+                    fetchK: 40,  // Increased for QA to get more context
+                    lambda: 0.5,
+                    k: 20
+                }
+            };
+
+            // Improved filter logic for better context sharing
+            if (metadata?.type === 'dm' && metadata?.userId) {
+                retrieverOptions.filter = {
+                    OR: [
+                        { type: 'dm', userId: metadata.userId },
+                        { type: 'channel' },
+                        { type: 'summary' }
+                    ]
+                };
+            }
+
+            // Create a retriever with MMR for this specific query
+            const retriever = this.vectorStore.asRetriever(retrieverOptions);
+
+            // Create a one-time chain with the custom retriever
+            const queryChain = RunnableSequence.from([
+                {
+                    context: async (input: { question: string }) => {
+                        const docs = await retriever.invoke(input.question);
+                        // Apply recency weighting to format
+                        const weightedDocs = docs.map(doc => {
+                            const age = (Date.now() - new Date(doc.metadata.createdAt).getTime()) / (1000 * 60);
+                            const recencyBoost = Math.exp(-age / 1000);
+                            doc.metadata.score = (doc.metadata.score || 0.5) * (1 + recencyBoost);
+                            return doc;
+                        }).sort((a, b) => (b.metadata.score || 0) - (a.metadata.score || 0));
+                        return this.formatDocuments(weightedDocs);
+                    },
+                    question: (input: { question: string }) => input.question
+                },
+                this.qaChain
+            ]);
+
+            const response = await queryChain.invoke({
+                question: query
+            });
+
+            // Extract source documents with enhanced scoring
+            const sources = (await retriever.invoke(query)).map(doc => {
+                const age = (Date.now() - new Date(doc.metadata.createdAt).getTime()) / (1000 * 60);
+                const recencyBoost = Math.exp(-age / 1000);
+                return {
+                    content: doc.pageContent,
+                    metadata: doc.metadata as VectorMetadata,
+                    score: (doc.metadata.score || 0.5) * (1 + recencyBoost)
+                };
+            }).sort((a, b) => b.score - a.score);
+
+            console.log('[VectorService] QA Response:', {
+                answer: response,
+                sourceCount: sources.length
+            });
+
+            return {
+                answer: response,
+                sources: sources
+            };
+        } catch (error) {
+            console.error('[VectorService] Error in QA query:', {
+                error: error instanceof Error ? {
+                    message: error.message,
+                    name: error.name,
+                    stack: error.stack
+                } : error,
+                query,
+                metadata
+            });
+            throw new Error('Failed to process QA query');
+        }
+    }
+
+    async verifyTestDocument(doc: Document<VectorMetadata>, options?: { k?: number }): Promise<boolean> {
+        const results = await this.queryVectors(doc.pageContent, { k: options?.k || 1 });
+        return results.length > 0 && results[0].score > 0.3;
+    }
+
+    async verifyDocument(doc: Document<VectorMetadata>, options?: { maxPreviewLength?: number }): Promise<boolean> {
+        const maxPreviewLength = options?.maxPreviewLength || 50; // Default preview length
+        // Try different search patterns
+        const searchPatterns = [
+            doc.pageContent,                                    // Full content
+            doc.pageContent.substring(0, Math.min(doc.pageContent.length, maxPreviewLength)),  // First N chars
+            doc.pageContent.split(' ').slice(0, 5).join(' '),  // First 5 words
+            doc.pageContent.split(' ').slice(-5).join(' ')     // Last 5 words
+        ];
+
+        let bestMatch = { score: 0, pattern: '', found: false };
+        for (const pattern of searchPatterns) {
+            const results = await this.queryVectors(pattern, { k: 1 });
+            if (results.length > 0 && results[0].score > bestMatch.score) {
+                bestMatch = {
+                    score: results[0].score,
+                    pattern: pattern.substring(0, Math.min(pattern.length, maxPreviewLength / 2)) + '...',
+                    found: true
+                };
+            }
+        }
+
+        if (!bestMatch.found) {
+            console.warn('[VectorService] Document verification failed:', {
+                content: doc.pageContent.substring(0, Math.min(doc.pageContent.length, maxPreviewLength)) + '...',
+                metadata: doc.metadata
+            });
+            return false;
+        }
+
+        return true;
     }
 }

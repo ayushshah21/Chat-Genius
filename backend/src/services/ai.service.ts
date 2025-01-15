@@ -112,7 +112,7 @@ export class AIService {
             // Get vector search results if we have context
             let relevantContext = '';
             if (context) {
-                const vectorResults = await this.vectorService.queryVectors(prompt, 5);
+                const vectorResults = await this.vectorService.queryVectors(prompt, { k: 5 });
 
                 // Filter and format only the most relevant results
                 const filteredResults = vectorResults
@@ -318,49 +318,32 @@ Remember to:
                 receiverId
             });
 
-            // Get relevant context using vector search - get more results initially for better filtering
-            const vectorResults = await this.vectorService.queryVectors(prompt, 5);
+            // Use the QA chain for better context understanding
+            const qaResponse = await this.vectorService.queryWithQA(
+                prompt,
+                {
+                    userId,
+                    channelId: currentChannelId,
+                    type: receiverId ? 'dm' : 'channel'
+                }
+            );
 
-            // Filter results based on metadata and score
-            const filteredResults = vectorResults
-                .filter(result => {
-                    // Public channel messages
-                    if (result.metadata.type === 'channel') return true;
-
-                    // Current channel messages if in a channel
-                    if (currentChannelId && result.metadata.channelId === currentChannelId) return true;
-
-                    // DM messages if this is a DM
-                    if (receiverId && result.metadata.type === 'dm') {
-                        return result.metadata.userId === receiverId || result.metadata.userId === userId;
-                    }
-
-                    return false;
+            // Format the context from QA results
+            const formattedContext = qaResponse.sources
+                .map(result => {
+                    const timeAgo = Math.floor((Date.now() - new Date(result.metadata.createdAt).getTime()) / (1000 * 60));
+                    const source = result.metadata.type === 'dm' ? 'DM' : `#${result.metadata.channelId}`;
+                    const relevanceMarker = result.score > 0.6 ? '🎯 ' : '';
+                    return `${relevanceMarker}[${timeAgo}m ago] [${source}] ${result.metadata.userName}: ${result.content}`;
                 })
-                .filter(result => result.score >= 0.3)  // Apply score threshold
-                .slice(0, 3);  // Take only top 3 most relevant
-
-            // Format the context
-            let formattedContext = '';
-
-            // Add semantically similar messages first for better context
-            if (filteredResults && filteredResults.length > 0) {
-                formattedContext = filteredResults
-                    .sort((a, b) => new Date(b.metadata.createdAt).getTime() - new Date(a.metadata.createdAt).getTime())
-                    .map(result => {
-                        const timeAgo = Math.floor((Date.now() - new Date(result.metadata.createdAt).getTime()) / (1000 * 60));
-                        const source = result.metadata.type === 'dm' ? 'DM' : `#${result.metadata.channelId}`;
-                        const relevanceMarker = result.score > 0.6 ? '🎯 ' : '';
-                        return `${relevanceMarker}[${timeAgo}m ago] [${source}] ${result.metadata.userName}: ${result.pageContent}`;
-                    })
-                    .join('\n');
-            }
+                .join('\n');
 
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: 'system',
                     content: `You are an AI assistant that communicates in the following style: ${userStyle}.
 ${formattedContext ? `\nRelevant context:\n${formattedContext}\n` : ''}
+${qaResponse.answer ? `\nContext summary: ${qaResponse.answer}\n` : ''}
 
 Remember to:
 - Keep responses concise (2-3 sentences)
@@ -378,7 +361,7 @@ Remember to:
             const completion = await this.openai.chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages,
-                max_tokens: 250,  // Reduced from 1000 to prevent verbose responses
+                max_tokens: 250,
                 temperature: 0.7,
                 top_p: 0.9
             });

@@ -301,15 +301,16 @@ export default function MessageList({
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col space-y-1 min-h-0">
           {[...messages].reverse().map((message) => (
-            <MessageItem
-              key={message.id}
-              message={message}
-              onThreadClick={() => setSelectedThread(message)}
-              ref={(el) => (messageRefs.current[message.id] = el)}
-              isHighlighted={message.id === highlightMessageId}
-              channelId={channelId}
-              dmUserId={dmUserId}
-            />
+            <div key={message.id}>
+              <MessageItem
+                message={message}
+                onThreadClick={() => setSelectedThread(message)}
+                ref={(el) => (messageRefs.current[message.id] = el)}
+                isHighlighted={message.id === highlightMessageId}
+                channelId={channelId}
+                dmUserId={dmUserId}
+              />
+            </div>
           ))}
           <div ref={messagesEndRef} />
         </div>

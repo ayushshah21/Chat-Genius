@@ -11,13 +11,25 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 
 const prisma = new PrismaClient();
 
-interface Message {
+interface MessageWithUser {
     id: string;
     content: string | null;
     userId: string | null;
     user?: {
         name: string | null;
     } | null;
+    channelId?: string;
+    createdAt: Date;
+    isAI: boolean;
+}
+
+interface DirectMessageWithSender {
+    id: string;
+    content: string | null;
+    senderId: string;
+    sender: {
+        name: string | null;
+    };
     channelId?: string;
     createdAt: Date;
     isAI: boolean;
@@ -50,111 +62,126 @@ export class ContextService {
         });
     }
 
-    /**
-     * Enhanced version of handleRealTimeUpdate that also stores in vector database
-     */
-    async handleRealTimeUpdate(message: Message, type: "channel" | "dm"): Promise<void> {
+    async handleRealTimeUpdate(
+        message: MessageWithUser | DirectMessageWithSender,
+        type: 'channel' | 'dm'
+    ): Promise<{ success: boolean; error?: string }> {
         try {
-            // First, handle the traditional update
-            const contextId = type === "channel" ? message.channelId || message.id : message.id;
-
-            // Get existing context from DynamoDB
-            const command = new GetItemCommand({
-                TableName: CHAT_MEMORY_TABLE,
-                Key: {
-                    contextId: { S: contextId },
-                    type: { S: type }
-                }
+            console.log('[ContextService] Starting real-time update:', {
+                messageId: message.id,
+                type,
+                hasContent: !!message.content
             });
 
-            const { Item } = await dynamoDbClient.send(command);
-
-            // Get existing messages or initialize empty array
-            const existingMessages: Message[] = Item?.lastMessages?.L?.map(msg => ({
-                id: msg.M?.id?.S || '',
-                content: msg.M?.content?.S || '',
-                userId: msg.M?.userId?.S || '',
-                createdAt: new Date(msg.M?.createdAt?.S || Date.now()),
-                isAI: msg.M?.isAI?.BOOL || false
-            })) || [];
-
-            // Check if this message might start a new topic
-            const lastMessage = existingMessages[existingMessages.length - 1];
-            const isNewTopic = !lastMessage || await this.isNewTopic(message, lastMessage);
-
-            if (isNewTopic) {
-                // If it's a new topic, trigger a batch summarization
-                const messages = type === "channel"
-                    ? await this.getChannelHistory(contextId)
-                    : await this.getDMHistory(contextId);
-
-                const summaries = await this.batchSummarizeMessages(messages);
-                await this.updateContextWithBatchSummaries(contextId, type, summaries);
-            } else {
-                // Otherwise, just append the message to existing context
-                existingMessages.push(message);
-                const recentMessages = existingMessages.slice(-50);
-                await this.updateChatContext(contextId, type, recentMessages);
+            if (!message.content) {
+                return { success: true };
             }
 
-            // Now handle the vector store update if we have content
-            if (message.content) {
-                const metadata: VectorMetadata = {
-                    messageId: message.id,
-                    userId: message.userId || '',
-                    userName: message.user?.name || null,
-                    channelId: message.channelId,
-                    type: type,
-                    createdAt: message.createdAt.toISOString(),
-                    isAI: message.isAI
-                };
+            // Create metadata
+            const metadata: VectorMetadata = {
+                messageId: message.id,
+                type,
+                userId: 'sender' in message ? message.senderId : message.userId || '',
+                userName: ('sender' in message ? message.sender?.name : message.user?.name) || null,
+                channelId: type === 'channel' ? ('channelId' in message ? message.channelId : undefined) : undefined,
+                createdAt: message.createdAt.toISOString(),
+                isAI: message.isAI
+            };
 
-                // Split message into chunks if needed
-                const docs = await this.textSplitter.createDocuments(
-                    [message.content],
-                    [metadata]
-                ) as Document<VectorMetadata>[];
+            // Split and store message
+            const result = await this.vectorService.addDocuments([{
+                pageContent: message.content,
+                metadata
+            }]);
 
-                // Store chunks in vector database
-                await this.vectorService.addDocuments(docs);
+            console.log('[ContextService] Added documents to vector store:', {
+                messageId: message.id,
+                success: true
+            });
 
-                // Get similar messages for context
-                const similarMessages = await this.vectorService.queryVectors(message.content, 5);
+            // Wait longer for initial indexing
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
-                // Generate summary if needed
-                if (similarMessages.length > 0) {
-                    const summary = await this.summarizeMessages([message, ...similarMessages.map((msg: VectorSearchResult) => ({
-                        id: msg.metadata.messageId,
-                        content: msg.pageContent,
-                        userId: msg.metadata.userId,
-                        user: { name: msg.metadata.userName },
-                        channelId: msg.metadata.channelId,
-                        createdAt: new Date(msg.metadata.createdAt),
-                        isAI: msg.metadata.isAI
-                    }))]);
+            // Verify with retries
+            let retries = 0;
+            const maxRetries = 5;
+            const retryDelay = 2000;
 
-                    const summaryMetadata: VectorMetadata = {
-                        messageId: `summary-${message.id}`,
-                        userId: message.userId || '',
-                        userName: message.user?.name || null,
-                        channelId: message.channelId,
-                        type: 'summary',
-                        createdAt: new Date().toISOString(),
-                        isAI: true
-                    };
+            while (retries < maxRetries) {
+                try {
+                    // Try to find the message in the index with more results
+                    const results = await this.vectorService.queryVectors(message.content, { k: 5 });
 
-                    // Store summary as a new document
-                    await this.vectorService.addDocuments([
-                        new Document({
-                            pageContent: summary,
-                            metadata: summaryMetadata
-                        })
-                    ]);
+                    console.log('[ContextService] Verification attempt:', {
+                        messageId: message.id,
+                        attempt: retries + 1,
+                        found: results.length > 0,
+                        resultCount: results.length,
+                        firstResult: results[0]?.metadata
+                    });
+
+                    // Check if our message is in any of the results
+                    const found = results.some(doc => doc.metadata.messageId === message.id);
+
+                    if (found) {
+                        console.log('[ContextService] Message verified in index:', {
+                            messageId: message.id,
+                            attempts: retries + 1
+                        });
+                        return { success: true };
+                    }
+
+                    // If we have results but our message isn't found, log them for debugging
+                    if (results.length > 0) {
+                        console.log('[ContextService] Found other messages in index:', {
+                            messageId: message.id,
+                            attempt: retries + 1,
+                            foundIds: results.map(r => r.metadata.messageId)
+                        });
+                    }
+
+                    console.log('[ContextService] Message not found in index, retrying:', {
+                        messageId: message.id,
+                        attempt: retries + 1
+                    });
+
+                    retries++;
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                } catch (error) {
+                    console.error('[ContextService] Error during verification:', {
+                        messageId: message.id,
+                        attempt: retries + 1,
+                        error: error instanceof Error ? error.message : error
+                    });
+                    retries++;
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
                 }
             }
+
+            throw new Error('Message failed to index after retries');
         } catch (error) {
-            console.error("Error handling real-time update:", error);
-            throw new Error("Failed to handle real-time update");
+            console.error('[ContextService] Error in handleRealTimeUpdate:', {
+                error: error instanceof Error ? error.message : error,
+                messageId: message.id
+            });
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error during indexing'
+            };
+        }
+    }
+
+    private async verifyMessageIndexed(messageId: string, content: string): Promise<boolean> {
+        try {
+            // Try to find the message in the vector store
+            const results = await this.vectorService.queryVectors(content, { k: 1 });
+            return results.some(result => result.metadata.messageId === messageId);
+        } catch (error) {
+            console.error('[ContextService] Error verifying message index:', {
+                error: error instanceof Error ? error.message : error,
+                messageId
+            });
+            return false;
         }
     }
 
@@ -195,7 +222,7 @@ export class ContextService {
             if (latestMessage?.content) {
                 try {
                     const query = `${latestMessage.user?.name || 'Unknown'}: ${latestMessage.content}`;
-                    const similarMessages = await this.vectorService.queryVectors(query, 5);
+                    const similarMessages = await this.vectorService.queryVectors(query, { k: 5 });
                     const vectorContext = similarMessages.map((msg: VectorSearchResult) =>
                         `[Similar] ${msg.metadata.userName || 'Unknown'}: ${msg.pageContent}`
                     );
@@ -219,7 +246,7 @@ export class ContextService {
     /**
      * Get channel message history from PostgreSQL
      */
-    private async getChannelHistory(channelId: string): Promise<Message[]> {
+    private async getChannelHistory(channelId: string): Promise<MessageWithUser[]> {
         const messages = await prisma.message.findMany({
             where: {
                 channelId,
@@ -241,13 +268,13 @@ export class ContextService {
             }
         });
 
-        return messages as Message[];
+        return messages as MessageWithUser[];
     }
 
     /**
      * Get DM history from PostgreSQL
      */
-    private async getDMHistory(dmId: string): Promise<Message[]> {
+    private async getDMHistory(dmId: string): Promise<MessageWithUser[]> {
         // Split the dmId into sender and receiver IDs
         const [user1Id, user2Id] = dmId.split(':');
 
@@ -300,7 +327,7 @@ export class ContextService {
         }));
     }
 
-    private async summarizeMessages(messages: Message[]): Promise<string> {
+    private async summarizeMessages(messages: MessageWithUser[]): Promise<string> {
         const messageTexts = messages
             .filter(msg => msg.content)
             .map(msg => `${msg.user?.name || 'Unknown'}: ${msg.content}`)
@@ -330,7 +357,7 @@ Summary:`;
     /**
      * Update chat context in DynamoDB
      */
-    async updateChatContext(contextId: string, type: "channel" | "dm", messages: Message[]): Promise<void> {
+    async updateChatContext(contextId: string, type: "channel" | "dm", messages: MessageWithUser[]): Promise<void> {
         try {
             const command = new PutItemCommand({
                 TableName: CHAT_MEMORY_TABLE,
@@ -367,7 +394,7 @@ Summary:`;
     /**
      * Batch summarize messages with topic detection
      */
-    private async batchSummarizeMessages(messages: Message[]): Promise<TopicSummary[]> {
+    private async batchSummarizeMessages(messages: MessageWithUser[]): Promise<TopicSummary[]> {
         try {
             // Sort messages by creation time
             const sortedMessages = [...messages].sort((a, b) =>
@@ -375,9 +402,9 @@ Summary:`;
             );
 
             // Group messages into batches (max 1 hour per batch)
-            const batches: Message[][] = [];
-            let currentBatch: Message[] = [];
-            let lastMessage: Message | null = null;
+            const batches: MessageWithUser[][] = [];
+            let currentBatch: MessageWithUser[] = [];
+            let lastMessage: MessageWithUser | null = null;
 
             for (const message of sortedMessages) {
                 if (!lastMessage || await this.isNewTopic(message, lastMessage)) {
@@ -452,7 +479,7 @@ Summary:`;
     /**
      * Check if a message appears to be starting a new topic
      */
-    private async isNewTopic(currentMsg: Message, prevMsg: Message): Promise<boolean> {
+    private async isNewTopic(currentMsg: MessageWithUser, prevMsg: MessageWithUser): Promise<boolean> {
         if (!prevMsg) return true;
 
         // Consider it a new topic if:

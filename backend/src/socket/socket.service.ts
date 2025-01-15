@@ -157,6 +157,25 @@ export async function setupSocketIO(server: Server) {
                         io.to(data.channelId).emit('new_message', message);
                     }
 
+                    // Index all messages with content
+                    if (message.content) {
+                        console.log('[SocketService] Indexing message:', {
+                            messageId: message.id
+                        });
+
+                        const indexResult = await contextService.handleRealTimeUpdate(
+                            message,
+                            data.channelId ? 'channel' : 'dm'
+                        );
+
+                        if (!indexResult.success) {
+                            console.error('[SocketService] Failed to index message:', {
+                                messageId: message.id,
+                                error: indexResult.error
+                            });
+                        }
+                    }
+
                     let shouldAutoRespond = false;
                     let autoRespondUser = null;
 
@@ -191,91 +210,59 @@ export async function setupSocketIO(server: Server) {
                         shouldAutoRespond = !!autoRespondUser;
                     }
 
-                    // Generate auto-response if needed
-                    if (shouldAutoRespond && autoRespondUser) {
-                        console.log('[SocketService] Generating auto-response:', {
-                            userId: decoded.userId,
-                            autoRespondUserId: autoRespondUser.id,
-                            messageType: data.channelId ? 'channel' : 'dm'
-                        });
+                    // Handle AI auto-response if needed
+                    if (shouldAutoRespond && autoRespondUser && message.content) {
+                        try {
+                            console.log('[SocketService] Generating auto-response:', {
+                                messageId: message.id,
+                                userId: decoded.userId,
+                                autoRespondUserId: autoRespondUser.id
+                            });
 
-                        const contextType = data.channelId ? 'channel' : 'dm';
-                        const contextId = data.channelId || data.dmUserId;
-                        const context = await contextService.getChatContext(contextId!, contextType);
+                            // Generate enhanced response with indexed context
+                            const autoResponse = await aiService.generateEnhancedPersonalityResponse(
+                                message.content,
+                                autoRespondUser.communicationStyle || 'casual',
+                                autoRespondUser.id,
+                                data.channelId
+                            );
 
-                        // Use enhanced RAG-powered response generation
-                        const autoResponse = await aiService.generateEnhancedPersonalityResponse(
-                            data.content!,
-                            autoRespondUser.communicationStyle || 'casual',
-                            autoRespondUser.id,
-                            data.channelId,
-                            undefined  // No receiverId for channels
-                        );
-
-                        // Create auto-response message with isAI flag
-                        const responseMessage = data.channelId
-                            ? await messageService.createMessage(
+                            // Create and emit response
+                            const responseMessage = await createMessage(
                                 autoResponse,
                                 data.channelId,
                                 autoRespondUser.id,
-                                undefined, // No parent ID for direct channel messages
-                                undefined
-                            )
-                            : await prisma.directMessage.create({
-                                data: {
-                                    content: autoResponse,
-                                    senderId: autoRespondUser.id,
-                                    receiverId: decoded.userId,
-                                    isAI: true
-                                },
-                                include: {
-                                    sender: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            email: true,
-                                            avatarUrl: true
-                                        }
-                                    },
-                                    receiver: {
-                                        select: {
-                                            id: true,
-                                            name: true,
-                                            email: true,
-                                            avatarUrl: true
-                                        }
-                                    }
-                                }
+                                undefined  // parentId
+                            );
+
+                            console.log('[SocketService] Emitting AI response:', {
+                                messageId: responseMessage.id,
+                                originalMessageId: message.id
                             });
 
-                        console.log('[SocketService] Created auto-response message:', {
-                            messageId: responseMessage.id,
-                            type: data.channelId ? 'channel' : 'dm',
-                            autoRespondUserId: autoRespondUser.id
-                        });
+                            io.to(data.channelId).emit('new_message', responseMessage);
 
-                        // Emit the auto-response after a short delay
-                        setTimeout(() => {
-                            if (data.channelId) {
-                                console.log('[SocketService] Emitting channel auto-response:', {
-                                    channelId: data.channelId,
-                                    messageId: responseMessage.id
-                                });
-                                io.to(data.channelId).emit('new_message', responseMessage);
-                            } else {
-                                const dmRoomId = [decoded.userId, data.dmUserId].sort().join(':');
-                                io.to(`dm:${dmRoomId}`).emit('new_dm', responseMessage);
-                            }
-                        }, 200);
+                        } catch (error) {
+                            console.error('[SocketService] Error generating AI response:', {
+                                error: error instanceof Error ? error.message : error,
+                                messageId: message.id
+                            });
+
+                            socket.emit('message_error', {
+                                error: 'Failed to generate AI response',
+                                messageId: message.id
+                            });
+                        }
                     }
 
-                    // Broadcast original message
+                    // Handle parent message notifications
                     if (data.parentId) {
                         io.emit('new_reply', message);
                     }
+
                 } catch (error) {
-                    console.error('Error sending message:', error);
-                    socket.emit('message_error', { error: 'Failed to send message' });
+                    console.error('[SocketService] Error in message handling:', error);
+                    socket.emit('message_error', { error: 'Failed to process message' });
                 }
             });
 
