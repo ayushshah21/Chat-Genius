@@ -13,6 +13,7 @@ import userRoutes from "./routes/user.routes";
 import directMessageRoutes from "./routes/directMessage.routes";
 import searchRoutes from "./routes/search.routes";
 import fileRoutes from './routes/file.routes';
+import aiRoutes from "./routes/ai.routes";
 
 dotenv.config({
   path: `.env.${process.env.NODE_ENV || 'development'}`
@@ -89,6 +90,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/direct-messages", directMessageRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/files", fileRoutes);
+app.use("/api/ai", aiRoutes);
 
 const PORT = process.env.PORT || 4000;
 

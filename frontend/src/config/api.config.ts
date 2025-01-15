@@ -36,12 +36,16 @@ export const API_CONFIG = {
         SEARCH: {
             ALL: '/api/search',
             MESSAGES: '/api/search/messages',
-            DIRECT_MESSAGES: '/api/search/direct-messages'
+            DIRECT_MESSAGES: '/api/search/direct-messages',
+            AI: '/api/search/ai'
         },
         FILES: {
             UPLOAD_URL: '/api/files/upload-url',
             DOWNLOAD_URL: (fileId: string) => `/api/files/download-url/${fileId}`,
             UPDATE_METADATA: (fileId: string) => `/api/files/${fileId}/metadata`
+        },
+        AI: {
+            SEARCH: '/api/ai/search'
         }
     }
 }; 

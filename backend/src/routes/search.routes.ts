@@ -14,4 +14,5 @@ router.get("/direct-messages", (req, res) => {
     searchController.searchDirectMessages(req, res);
 });
 
+
 export default router; 

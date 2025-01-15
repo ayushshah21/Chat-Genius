@@ -39,6 +39,15 @@ interface FilterMetadata {
     channelId?: string;
 }
 
+export type SearchType = 'vector' | 'keyword' | 'semantic';
+
+export interface QueryOptions {
+    k?: number;
+    isDM?: boolean;
+    userId?: string;
+    searchType?: SearchType;
+}
+
 @Injectable()
 export class VectorService {
     private vectorStore!: PineconeStore;

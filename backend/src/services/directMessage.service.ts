@@ -29,10 +29,26 @@ export async function createDirectMessage(data: any) {
     const dmRoomId = getDMRoomId(data.senderId, data.receiverId);
 
     if (data.parentId) {
-        getIO().emit('new_reply', {
-            messageId: data.parentId,
-            reply: message
+        // Get parent message with replies for correct replyCount
+        const parentMessage = await prisma.directMessage.findUnique({
+            where: { id: data.parentId },
+            include: {
+                replies: true,
+                sender: true,
+                receiver: true
+            }
         });
+
+        if (parentMessage) {
+            const roomId = `dm:${getDMRoomId(parentMessage.sender.id, parentMessage.receiver.id)}`;
+            getIO().to(roomId).emit('new_reply', {
+                reply: message,
+                parentMessage: {
+                    ...parentMessage,
+                    replyCount: (parentMessage.replies?.length || 0) + 1
+                }
+            });
+        }
     } else {
         getIO().to(`dm:${dmRoomId}`).emit('new_dm', message);
     }
