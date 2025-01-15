@@ -51,7 +51,7 @@ interface AISearchResult {
 
 export default function Navbar() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [searchQuery, setSearchQuery] = useState("");
+  const [_, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [theme, setTheme] = useState("default");
