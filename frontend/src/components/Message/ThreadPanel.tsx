@@ -74,10 +74,13 @@ export default function ThreadPanel({
     fetchReplies();
 
     // Listen for new replies
-    const handleNewReply = async (reply: Message | DirectMessage) => {
-      if (reply.parentId === parentMessage.id) {
-        setReplies((prev) => [...prev, reply]);
-        await fetchFileUrlsForMessage(reply);
+    const handleNewReply = async (data: {
+      reply: Message | DirectMessage;
+      parentMessage: (Message | DirectMessage) & { replyCount: number };
+    }) => {
+      if (data.reply.parentId === parentMessage.id) {
+        setReplies((prev) => [...prev, data.reply]);
+        await fetchFileUrlsForMessage(data.reply);
       }
     };
 

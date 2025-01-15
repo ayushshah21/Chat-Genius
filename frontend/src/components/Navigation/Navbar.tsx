@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, User, LogOut } from "lucide-react";
+import { Search, User, LogOut, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import { Message } from "../../types/message";
 import { DirectMessage } from "../../types/directMessage";
 import { socket } from "../../lib/socket";
+import AISearchResults from "../search/AISearchResults";
 
 const themes = {
   default: "Default",
@@ -35,13 +36,31 @@ interface SearchResult {
   };
 }
 
+interface AISearchResult {
+  answer: string;
+  analysis?: string;
+  evidence: {
+    content: string;
+    messageId: string;
+    channelId?: string;
+    timestamp: string;
+    userName?: string;
+  }[];
+  additionalContext?: string;
+}
+
 export default function Navbar() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [theme, setTheme] = useState("default");
   const searchRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const [isAISearch, setIsAISearch] = useState(false);
+  const [aiResults, setAIResults] = useState<AISearchResult | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [inputValue, setInputValue] = useState("");
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -84,11 +103,22 @@ export default function Navbar() {
     setSearchQuery(query);
     if (query.trim().length < 2) {
       setSearchResults([]);
+      setAIResults(null);
       setShowResults(false);
+      setIsSearching(false);
       return;
     }
 
+    setIsSearching(true);
+    setShowResults(true); // Show results container immediately for loading state
+
     try {
+      if (isAISearch) {
+        // AI search is handled by handleAISearch
+        return;
+      }
+
+      // Regular search logic
       const [messagesResponse, dmsResponse] = await Promise.all([
         axiosInstance.get(
           `${API_CONFIG.ENDPOINTS.SEARCH.MESSAGES}?query=${query}`
@@ -129,6 +159,9 @@ export default function Navbar() {
       setShowResults(true);
     } catch (error) {
       console.error("Failed to search:", error);
+      setShowResults(false);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -151,6 +184,79 @@ export default function Navbar() {
     });
   };
 
+  const handleNavigateToMessage = (messageId: string, channelId?: string) => {
+    setShowResults(false);
+    if (channelId) {
+      navigate(`/channels/${channelId}?messageId=${messageId}`);
+    } else {
+      // Handle DM navigation
+      navigate(`/dm/${messageId}`);
+    }
+  };
+
+  const handleInputChange = (value: string) => {
+    setInputValue(value);
+
+    // If the input is cleared, reset everything including AI mode
+    if (!value.trim()) {
+      setIsAISearch(false); // Exit AI mode automatically
+      setSearchResults([]);
+      setAIResults(null);
+      setShowResults(false);
+      setIsSearching(false);
+      return;
+    }
+
+    // Only perform regular search if not in AI mode
+    if (!isAISearch) {
+      handleSearch(value);
+    }
+  };
+
+  const handleAISearch = async () => {
+    if (inputValue.trim().length < 2) return;
+
+    setIsSearching(true);
+    setShowResults(true); // Show results container immediately for loading state
+    setAIResults(null); // Clear previous results while loading
+
+    try {
+      const response = await axiosInstance.get(
+        `${API_CONFIG.ENDPOINTS.AI.SEARCH}?query=${encodeURIComponent(
+          inputValue
+        )}`
+      );
+      setAIResults(response.data);
+      setShowResults(true);
+    } catch (error) {
+      console.error("Failed to perform AI search:", error);
+      setShowResults(false);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const toggleAISearch = async () => {
+    const newMode = !isAISearch;
+    setIsAISearch(newMode);
+    setShowResults(false); // Hide results when switching modes
+    setAIResults(null);
+    setSearchResults([]);
+    setIsSearching(false);
+
+    // Clear results when switching to normal search
+    if (!newMode) {
+      if (inputValue.trim().length >= 2) {
+        handleSearch(inputValue); // Trigger normal search if we have input
+      }
+    } else {
+      // Trigger AI search immediately if we have input
+      if (inputValue.trim().length >= 2) {
+        handleAISearch();
+      }
+    }
+  };
+
   return (
     <div className="h-14 bg-[var(--background-light)] border-b border-[var(--border)] flex items-center justify-between px-4">
       {/* Left Side - Theme Selector */}
@@ -170,48 +276,94 @@ export default function Navbar() {
 
       {/* Center - Search Bar */}
       <div ref={searchRef} className="flex-1 max-w-2xl mx-auto relative">
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Search messages and channels"
-            className="w-full bg-[var(--input-bg)] text-[var(--input-text)] px-4 py-1.5 pl-10 rounded border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent placeholder-[var(--input-placeholder)]"
-          />
-          <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
+        <div className="relative flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => handleInputChange(e.target.value)}
+              placeholder={
+                isAISearch ? "Ask anything..." : "Search messages and channels"
+              }
+              className="w-full bg-[var(--input-bg)] text-[var(--input-text)] px-4 py-1.5 pl-10 rounded-l border border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent placeholder-[var(--input-placeholder)]"
+            />
+            <Search className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-2.5" />
+          </div>
+
+          {isAISearch ? (
+            // AI Search Button
+            <button
+              onClick={handleAISearch}
+              className={`px-3 py-1.5 rounded-r border border-l-0 border-[var(--border)] hover:bg-[var(--background-hover)] transition-colors duration-200 ${
+                isAISearch
+                  ? "bg-[var(--primary)] text-white hover:bg-[var(--primary-dark)]"
+                  : "bg-[var(--input-bg)] text-[var(--text-muted)]"
+              }`}
+              title="Search with AI"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          ) : (
+            // Toggle Button for switching modes
+            <button
+              onClick={toggleAISearch}
+              className="px-3 py-1.5 rounded-r border border-l-0 border-[var(--border)] hover:bg-[var(--background-hover)] transition-colors duration-200 bg-[var(--input-bg)] text-[var(--text-muted)]"
+              title="Switch to AI search"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Search Results Dropdown */}
-        {showResults && searchResults.length > 0 && (
+        {showResults && (
           <div className="absolute top-full mt-2 w-full bg-[var(--background)] border border-[var(--border)] rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
-            {searchResults.map((result) => (
-              <button
-                key={result.id}
-                onClick={() => handleResultClick(result)}
-                className="w-full text-left p-3 hover:bg-[var(--background-hover)] border-b border-[var(--border)] last:border-0"
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-[var(--text)] font-medium">
-                      {result.sender.name || result.sender.email}
-                    </p>
-                    <p className="text-[var(--text-muted)] text-sm mt-1">
-                      {result.content}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs text-[var(--text-muted)]">
-                      {formatDate(result.createdAt)}
-                    </span>
-                    {result.channelName && (
-                      <span className="text-xs text-[var(--primary)] mt-1">
-                        #{result.channelName}
+            {isAISearch ? (
+              aiResults ? (
+                <AISearchResults
+                  {...aiResults}
+                  onNavigateToMessage={handleNavigateToMessage}
+                  isLoading={isSearching}
+                />
+              ) : isSearching ? (
+                <AISearchResults
+                  answer=""
+                  evidence={[]}
+                  onNavigateToMessage={handleNavigateToMessage}
+                  isLoading={true}
+                />
+              ) : null
+            ) : (
+              // Existing search results UI
+              searchResults.map((result) => (
+                <button
+                  key={result.id}
+                  onClick={() => handleResultClick(result)}
+                  className="w-full text-left p-3 hover:bg-[var(--background-hover)] border-b border-[var(--border)] last:border-0"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-[var(--text)] font-medium">
+                        {result.sender.name || result.sender.email}
+                      </p>
+                      <p className="text-[var(--text-muted)] text-sm mt-1">
+                        {result.content}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {formatDate(result.createdAt)}
                       </span>
-                    )}
+                      {result.channelName && (
+                        <span className="text-xs text-[var(--primary)] mt-1">
+                          #{result.channelName}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>

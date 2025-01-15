@@ -51,6 +51,7 @@ export default function MessageList({
   const [initialScrollDone, setInitialScrollDone] = useState(false);
   const [isSearchResult, setIsSearchResult] = useState(false);
   const [hasHighlightedMessage, setHasHighlightedMessage] = useState(false);
+  const [avoidAutoScroll, setAvoidAutoScroll] = useState(false);
 
   const handleMessageDeleted = (data: {
     messageId: string;
@@ -91,35 +92,87 @@ export default function MessageList({
     // Only add to main list if it's not a thread reply
     if (!message.parentId) {
       setMessages((prev) => [message, ...prev]);
-      clearSearchStates(true);
-      scrollToBottom();
+      // Only clear search states and scroll if the message is from the current user
+      if (message.userId === localStorage.getItem("userId")) {
+        clearSearchStates(true);
+        // Re-enable auto-scroll for new messages from current user only
+        setAvoidAutoScroll(false);
+        scrollToBottom();
+      }
     }
   };
 
-  // const replyHandler = (reply: Message) => {
-  //   setMessages((prev) =>
-  //     prev.map((msg) =>
-  //       msg.id === reply.parentId
-  //         ? { ...msg, replies: [...(msg.replies || []), reply] }
-  //         : msg
-  //     )
-  //   );
-  // };
+  const replyHandler = (data: {
+    reply: Message;
+    parentMessage: Message & { replyCount: number };
+  }) => {
+    console.log("[MessageList] Received new_reply event:", {
+      reply: {
+        id: data.reply.id,
+        parentId: data.reply.parentId,
+        content: data.reply.content?.slice(0, 50) + "...",
+      },
+      parentMessage: {
+        id: data.parentMessage.id,
+        replyCount: data.parentMessage.replyCount,
+        currentReplies: data.parentMessage.replies?.length || 0,
+      },
+    });
+
+    setMessages((prev) => {
+      const updated = prev.map((msg) => {
+        if (msg.id === data.reply.parentId) {
+          console.log("[MessageList] Updating parent message:", {
+            parentId: msg.id,
+            currentReplies: msg.replies?.length || 0,
+            newReplyId: data.reply.id,
+            receivedReplyCount: data.parentMessage.replyCount,
+          });
+
+          const updatedMessage = {
+            ...msg,
+            replies: [...(msg.replies || []), data.reply],
+            replyCount: data.parentMessage.replyCount,
+          };
+
+          console.log("[MessageList] Updated parent message:", {
+            parentId: updatedMessage.id,
+            newReplyCount: updatedMessage.replyCount,
+            replyArrayLength: updatedMessage.replies.length,
+          });
+
+          return updatedMessage;
+        }
+        return msg;
+      });
+
+      return updated;
+    });
+  };
 
   const clearSearchStates = (force = false) => {
     if (force) {
+      console.log("Clearing search states, force =", force);
       setIsSearchResult(false);
       setHasHighlightedMessage(false);
+      setAvoidAutoScroll(false); // Reset auto-scroll when clearing search states
     }
   };
 
   const scrollToBottom = () => {
-    if (!isSearchResult && !hasHighlightedMessage) {
+    console.log("Attempting to scroll to bottom:", {
+      isSearchResult,
+      hasHighlightedMessage,
+      avoidAutoScroll,
+      initialScrollDone,
+    });
+    if (!isSearchResult && !hasHighlightedMessage && !avoidAutoScroll) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   };
 
   const scrollToMessage = (messageId: string) => {
+    console.log("Attempting to scroll to message:", messageId);
     const messageElement = messageRefs.current[messageId];
     if (messageElement) {
       messageElement.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -135,9 +188,14 @@ export default function MessageList({
 
   // Update the highlightMessageId effect
   useEffect(() => {
+    console.log("highlightMessageId effect triggered:", {
+      highlightMessageId,
+      initialScrollDone,
+    });
     if (highlightMessageId) {
       setIsSearchResult(true);
       setHasHighlightedMessage(true);
+      setAvoidAutoScroll(true); // Prevent auto-scroll when highlighting a message
 
       if (!initialScrollDone) {
         const timer = setTimeout(() => {
@@ -150,11 +208,21 @@ export default function MessageList({
 
   // Update the messages change effect
   useEffect(() => {
+    console.log("Messages change effect triggered:", {
+      highlightMessageId,
+      initialScrollDone,
+      isSearchResult,
+      hasHighlightedMessage,
+      avoidAutoScroll,
+      messageCount: messages.length,
+    });
+
     if (
       !highlightMessageId &&
       initialScrollDone &&
       !isSearchResult &&
-      !hasHighlightedMessage
+      !hasHighlightedMessage &&
+      !avoidAutoScroll
     ) {
       scrollToBottom();
     }
@@ -164,43 +232,78 @@ export default function MessageList({
     initialScrollDone,
     isSearchResult,
     hasHighlightedMessage,
+    avoidAutoScroll,
   ]);
 
   // Update channel/DM change effect
   useEffect(() => {
+    console.log("Channel/DM change effect triggered:", {
+      channelId,
+      dmUserId,
+      highlightMessageId,
+    });
     clearSearchStates(true);
     setInitialScrollDone(false);
+    setAvoidAutoScroll(false); // Reset when changing channels
   }, [channelId, dmUserId]);
 
   useEffect(() => {
     const fetchMessages = async () => {
       try {
+        // Join rooms immediately before any async operations
         if (channelId) {
-          socket.emit("join_channel", channelId);
+          console.log(
+            "[MessageList] Joining channel room:",
+            `channel_${channelId}`
+          );
           socket.emit("join_channel", `channel_${channelId}`);
+        } else if (dmUserId) {
+          console.log("[MessageList] Joining DM room:", dmUserId);
+          socket.emit("join_dm", dmUserId);
+        }
 
+        // Then fetch messages
+        if (channelId) {
           const response = await axiosInstance.get(
             `${API_CONFIG.ENDPOINTS.MESSAGES.CHANNEL}/${channelId}`
           );
           setMessages(response.data);
+
+          // Only auto-scroll if we don't have a highlighted message
           if (!highlightMessageId) {
+            console.log("Initial channel load - scrolling to bottom");
             setTimeout(() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              if (!avoidAutoScroll) {
+                messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              }
               setInitialScrollDone(true);
             }, 100);
+          } else {
+            console.log(
+              "Initial channel load with highlight - skipping scroll"
+            );
+            setInitialScrollDone(true);
+            setAvoidAutoScroll(true);
           }
         } else if (dmUserId) {
-          socket.emit("join_dm", dmUserId);
-
           const response = await axiosInstance.get(
             `${API_CONFIG.ENDPOINTS.DIRECT_MESSAGES.GET(dmUserId)}`
           );
           setMessages(response.data);
+
+          // Only auto-scroll if we don't have a highlighted message
           if (!highlightMessageId) {
+            console.log("Initial DM load - scrolling to bottom");
             setTimeout(() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              if (!avoidAutoScroll) {
+                messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+              }
               setInitialScrollDone(true);
             }, 100);
+          } else {
+            console.log("Initial DM load with highlight - skipping scroll");
+            setInitialScrollDone(true);
+            setAvoidAutoScroll(true);
           }
         }
       } catch (error) {
@@ -214,10 +317,13 @@ export default function MessageList({
 
     return () => {
       if (channelId) {
-        // Leave both room formats
-        socket.emit("leave_channel", channelId);
+        console.log(
+          "[MessageList] Leaving channel room:",
+          `channel_${channelId}`
+        );
         socket.emit("leave_channel", `channel_${channelId}`);
       } else if (dmUserId) {
+        console.log("[MessageList] Leaving DM room:", dmUserId);
         socket.emit("leave_dm", dmUserId);
       }
       setInitialScrollDone(false);
@@ -225,59 +331,33 @@ export default function MessageList({
   }, [channelId, dmUserId, highlightMessageId]);
 
   useEffect(() => {
+    if (!channelId && !dmUserId) return;
+
+    console.log("[MessageList] Setting up socket listeners:", {
+      channelId,
+      dmUserId,
+      isSearchResult,
+    });
+
+    // Set up socket listeners
     socket.on("new_message", messageHandler);
     socket.on("new_dm", messageHandler);
-
-    return () => {
-      socket.off("new_message", messageHandler);
-      socket.off("new_dm", messageHandler);
-    };
-  }, [isSearchResult]);
-
-  useEffect(() => {
-    if (!channelId) return;
-
-    const handleNewMessage = (message: Message) => {
-      if (!message.parentId) {
-        setMessages((prev) => {
-          // Check if message already exists
-          const exists = prev.some((m) => m.id === message.id);
-          if (exists) {
-            // Update existing message
-            return prev.map((m) => (m.id === message.id ? message : m));
-          }
-          // Add new message
-          return [...prev, message];
-        });
-      }
-    };
-
-    const handleNewReply = (reply: Message) => {
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id === reply.parentId) {
-            return {
-              ...msg,
-              replies: [...(msg.replies || []), reply],
-            };
-          }
-          return msg;
-        })
-      );
-    };
-
-    socket.on("new_message", handleNewMessage);
-    socket.on("new_reply", handleNewReply);
+    socket.on("new_reply", replyHandler);
     socket.on("message_deleted", handleMessageDeleted);
     socket.on("reply_deleted", handleReplyDeleted);
 
     return () => {
-      socket.off("new_message", handleNewMessage);
-      socket.off("new_reply", handleNewReply);
+      console.log("[MessageList] Cleaning up socket listeners:", {
+        channelId,
+        dmUserId,
+      });
+      socket.off("new_message", messageHandler);
+      socket.off("new_dm", messageHandler);
+      socket.off("new_reply", replyHandler);
       socket.off("message_deleted", handleMessageDeleted);
       socket.off("reply_deleted", handleReplyDeleted);
     };
-  }, [channelId]);
+  }, [channelId, dmUserId, isSearchResult]);
 
   if (loading) {
     return (
