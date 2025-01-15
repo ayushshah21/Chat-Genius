@@ -12,6 +12,7 @@ import { contextService } from '../services/context.service';
 import { ConfigService } from '@nestjs/config';
 import { VectorService } from '../services/vector.service';
 import { PrismaService } from '../services/prisma.service';
+import { MessageWithUser, DirectMessageWithSender } from '../types/message.types';
 
 const prisma = new PrismaClient();
 let aiService: AIService;
@@ -148,32 +149,31 @@ export async function setupSocketIO(server: Server) {
                         data.parentId
                     );
 
-                    // Emit original message immediately
-                    if (data.channelId) {
-                        console.log('[SocketService] Emitting original channel message:', {
-                            channelId: data.channelId,
-                            messageId: message.id
-                        });
-                        io.to(data.channelId).emit('new_message', message);
+                    // Handle parent message (reply) first if applicable
+                    if (data.parentId) {
+                        await emitReplyEvent(io, message, false);
+                    } else {
+                        // Emit original message immediately
+                        io.to(`channel_${data.channelId}`).emit('new_message', message);
                     }
 
-                    // Index all messages with content
+                    // Handle indexing asynchronously
                     if (message.content) {
-                        console.log('[SocketService] Indexing message:', {
-                            messageId: message.id
-                        });
-
-                        const indexResult = await contextService.handleRealTimeUpdate(
-                            message,
-                            data.channelId ? 'channel' : 'dm'
-                        );
-
-                        if (!indexResult.success) {
-                            console.error('[SocketService] Failed to index message:', {
-                                messageId: message.id,
-                                error: indexResult.error
+                        contextService.handleRealTimeUpdate(message, 'channel')
+                            .then(result => {
+                                if (!result.success) {
+                                    console.error('[SocketService] Failed to index message:', {
+                                        messageId: message.id,
+                                        error: result.error
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('[SocketService] Error during async indexing:', {
+                                    messageId: message.id,
+                                    error: error instanceof Error ? error.message : error
+                                });
                             });
-                        }
                     }
 
                     let shouldAutoRespond = false;
@@ -240,7 +240,7 @@ export async function setupSocketIO(server: Server) {
                                 originalMessageId: message.id
                             });
 
-                            io.to(data.channelId).emit('new_message', responseMessage);
+                            io.to(`channel_${data.channelId}`).emit('new_message', responseMessage);
 
                         } catch (error) {
                             console.error('[SocketService] Error generating AI response:', {
@@ -253,11 +253,6 @@ export async function setupSocketIO(server: Server) {
                                 messageId: message.id
                             });
                         }
-                    }
-
-                    // Handle parent message notifications
-                    if (data.parentId) {
-                        io.emit('new_reply', message);
                     }
 
                 } catch (error) {
@@ -427,22 +422,28 @@ export async function setupSocketIO(server: Server) {
                         receiverAutoReply: message.receiver.autoReplyEnabled
                     });
 
-                    // Emit original message first
-                    const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
+                    // Handle reply or normal message
+                    if (data.parentId) {
+                        await emitReplyEvent(io, message, true);
+                    } else {
+                        // Emit original message first
+                        const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
+                        const roomId = `dm:${dmRoomId}`;
 
-                    // Ensure socket is in DM room for original message
-                    if (!socket.rooms.has(`dm:${dmRoomId}`)) {
-                        console.log('[SocketService] Joining DM room for original message:', `dm:${dmRoomId}`);
-                        socket.join(`dm:${dmRoomId}`);
+                        // Ensure socket is in DM room for original message
+                        if (!socket.rooms.has(roomId)) {
+                            console.log('[SocketService] Joining DM room for original message:', roomId);
+                            socket.join(roomId);
+                        }
+
+                        console.log('[SocketService] Emitting original DM:', {
+                            roomId,
+                            messageId: message.id,
+                            socketRooms: Array.from(socket.rooms)
+                        });
+
+                        io.to(roomId).emit('new_dm', message);
                     }
-
-                    console.log('[SocketService] Emitting original DM:', {
-                        dmRoomId,
-                        messageId: message.id,
-                        socketRooms: Array.from(socket.rooms)
-                    });
-
-                    io.to(`dm:${dmRoomId}`).emit('new_dm', message);
 
                     // Then handle auto-response if enabled
                     if (message.receiver.autoReplyEnabled) {
@@ -519,15 +520,18 @@ export async function setupSocketIO(server: Server) {
                                 }
                             });
 
+                            const autoDmRoomId = [data.receiverId, decoded.userId].sort().join(':');
+                            const autoRoomId = `dm:${autoDmRoomId}`;
+
                             console.log('[SocketService] Emitting DM auto-response:', {
-                                dmRoomId,
+                                roomId: autoRoomId,
                                 messageId: responseMessage.id,
                                 senderId: data.receiverId,
                                 receiverId: decoded.userId,
                                 messageContent: autoResponse?.slice(0, 50) + '...'
                             });
 
-                            io.to(`dm:${dmRoomId}`).emit('new_dm', responseMessage);
+                            io.to(autoRoomId).emit('new_dm', responseMessage);
                         }, 500); // Add a small delay to ensure message order
                     }
 
@@ -637,12 +641,9 @@ export async function setupSocketIO(server: Server) {
                     if (data.channelId && updatedFile.message) {
                         const message = updatedFile.message;
                         if (message.parentId) {
-                            io.emit('new_reply', {
-                                ...message,
-                                parentMessage: message.parent
-                            });
+                            await emitReplyEvent(io, message, false);
                         } else {
-                            io.to(data.channelId).emit('new_message', message);
+                            io.to(`channel_${data.channelId}`).emit('new_message', message);
                         }
                     }
                     // Handle DM message
@@ -659,10 +660,7 @@ export async function setupSocketIO(server: Server) {
                         });
 
                         if (dm.parentId && dm.parent) {
-                            io.emit('new_reply', {
-                                ...dm,
-                                parentMessage: dm.parent
-                            });
+                            await emitReplyEvent(io, dm, true);
                         } else {
                             io.to(roomId).emit('new_dm', dm);
                         }
@@ -1156,5 +1154,85 @@ export async function setupSocketIO(server: Server) {
     } catch (error) {
         console.error('[SocketService] Failed to initialize socket service:', error);
         throw error;
+    }
+}
+
+async function emitReplyEvent(io: Server, reply: Message | DirectMessage, isDirectMessage: boolean) {
+    try {
+        // For channel messages
+        if (!isDirectMessage) {
+            const parentMessage = await prisma.message.findUnique({
+                where: { id: reply.parentId! },
+                include: {
+                    replies: true,
+                    channel: true,
+                    user: true
+                }
+            });
+
+            if (parentMessage && parentMessage.channel) {
+                const replyData = {
+                    reply,
+                    parentMessage: {
+                        ...parentMessage,
+                        replyCount: (parentMessage.replies?.length || 0) + 1
+                    }
+                };
+
+                // Emit immediately to the channel
+                io.to(`channel_${parentMessage.channel.id}`).emit('new_reply', replyData);
+
+                // Handle indexing asynchronously without blocking
+                if (reply.content) {
+                    const messageWithUser = {
+                        ...reply,
+                        user: parentMessage.user
+                    } as MessageWithUser;
+
+                    contextService.handleRealTimeUpdate(messageWithUser, 'channel')
+                        .then(result => {
+                            if (!result.success) {
+                                console.error('[SocketService] Failed to index reply:', {
+                                    replyId: reply.id,
+                                    error: result.error
+                                });
+                            }
+                        })
+                        .catch(error => {
+                            console.error('[SocketService] Error during async indexing:', {
+                                replyId: reply.id,
+                                error: error instanceof Error ? error.message : error
+                            });
+                        });
+                }
+            }
+        }
+        // For direct messages
+        else {
+            const dm = reply as DirectMessage;
+            const parentMessage = await prisma.directMessage.findUnique({
+                where: { id: dm.parentId! },
+                include: {
+                    replies: true,
+                    sender: true,
+                    receiver: true
+                }
+            });
+
+            if (parentMessage) {
+                const dmRoomId = [parentMessage.sender.id, parentMessage.receiver.id].sort().join(':');
+                const replyData = {
+                    reply: dm,
+                    parentMessage: {
+                        ...parentMessage,
+                        replyCount: (parentMessage.replies?.length || 0) + 1
+                    }
+                };
+
+                io.to(`dm:${dmRoomId}`).emit('new_reply', replyData);
+            }
+        }
+    } catch (error) {
+        console.error('[SocketService] Error emitting reply event:', error);
     }
 } 

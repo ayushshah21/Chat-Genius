@@ -8,32 +8,9 @@ import { PrismaService } from './prisma.service';
 import { Injectable } from '@nestjs/common';
 import { Document } from 'langchain/document';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+import { MessageWithUser, DirectMessageWithSender } from '../types/message.types';
 
 const prisma = new PrismaClient();
-
-interface MessageWithUser {
-    id: string;
-    content: string | null;
-    userId: string | null;
-    user?: {
-        name: string | null;
-    } | null;
-    channelId?: string;
-    createdAt: Date;
-    isAI: boolean;
-}
-
-interface DirectMessageWithSender {
-    id: string;
-    content: string | null;
-    senderId: string;
-    sender: {
-        name: string | null;
-    };
-    channelId?: string;
-    createdAt: Date;
-    isAI: boolean;
-}
 
 interface TopicSummary {
     topic: string;
