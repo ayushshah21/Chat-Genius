@@ -46,12 +46,13 @@ async function testVectorStore() {
         console.log('✓ Message stored successfully');
 
         // Verify the message was stored
-        const verifyResults = await vectorService.queryVectors(testMessage.content, 1);
-        console.log('Verification results:', JSON.stringify(verifyResults, null, 2));
-        if (verifyResults.length === 0) {
+        console.log('\n[Test] Verifying document indexing...');
+        const verificationResults = await vectorService.queryVectors(testMessage.content, { k: 1 });
+        console.log('Verification results:', JSON.stringify(verificationResults, null, 2));
+        if (verificationResults.length === 0) {
             throw new Error('Failed to verify stored message');
         }
-        console.log('✓ Storage verified with similarity score:', verifyResults[0].score);
+        console.log('✓ Storage verified with similarity score:', verificationResults[0].score);
 
         // Test 2: Add related message
         const relatedMessage = {

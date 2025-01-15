@@ -1,83 +1,39 @@
 import { VectorService } from '../services/vector.service';
-import { PrismaService } from '../services/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import * as dotenv from 'dotenv';
+import { PrismaService } from '../services/prisma.service';
 
-// Load environment variables
-dotenv.config();
+async function inspectVectorStore() {
+    console.log('Initializing vector service...');
+    const configService = new ConfigService();
+    const prismaService = new PrismaService();
+    const vectorService = new VectorService(configService, prismaService);
 
-async function testPineconeContents() {
-    console.log('[PineconeTest] Starting Pinecone content inspection...');
+    // Wait for initialization
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('\nSearching for messages about "plantation" or "golf"...');
+    const golfResults = await vectorService.queryVectors('plantation golf PGA course', { k: 20 });
 
-    try {
-        // Initialize services
-        const configService = new ConfigService();
-        const prismaService = new PrismaService();
-        const vectorService = new VectorService(configService, prismaService);
+    console.log('\nFound messages:');
+    golfResults.forEach((result, index) => {
+        console.log(`\n--- Result ${index + 1} (Score: ${result.score.toFixed(3)}) ---`);
+        console.log('Content:', result.pageContent);
+        console.log('Created:', new Date(result.metadata.createdAt).toLocaleString());
+        console.log('User:', result.metadata.userName);
+        console.log('Type:', result.metadata.type);
+        console.log('Channel:', result.metadata.channelId);
+    });
 
-        // Initialize vector store
-        await vectorService.onModuleInit();
+    // Clean up test data
+    console.log('\nCleaning up test data...');
+    await vectorService.deleteTestData();
 
-        // First, let's see what's in Pinecone before deletion
-        console.log('\n[PineconeTest] Checking current Pinecone contents...');
-        const initialResults = await vectorService.queryVectors('test message', 20);
-        console.log('[PineconeTest] Current test messages:', initialResults.length);
+    // Test basic retrieval
+    console.log('\n[Test] Testing basic retrieval...');
+    const results = await vectorService.queryVectors("What are the contents?", { k: 20 });
 
-        // Delete test data using metadata filter
-        console.log('\n[PineconeTest] Cleaning up test data...');
-        await vectorService.deleteTestData();
-        console.log('[PineconeTest] Test data cleanup completed');
-
-        // Check sync status between database and Pinecone
-        console.log('\n[PineconeTest] Checking sync status...');
-        const dbMessages = await prismaService.message.findMany({
-            where: {
-                content: { not: null },
-                channelId: { not: undefined }
-            },
-            include: {
-                user: true,
-                channel: true
-            },
-            orderBy: {
-                createdAt: 'desc'
-            },
-            take: 10
-        });
-
-        console.log(`[PineconeTest] Recent messages in database: ${dbMessages.length}`);
-
-        // Check each message in Pinecone
-        console.log('\n[PineconeTest] Checking if recent messages are in Pinecone...');
-        let missingCount = 0;
-
-        for (const msg of dbMessages) {
-            if (!msg.content) continue;
-
-            const searchResult = await vectorService.queryVectors(msg.content, 5);
-            const found = searchResult.some(result => result.metadata.messageId === msg.id);
-
-            console.log(`Message "${msg.content.substring(0, 30)}..." (${msg.id}): ${found ? 'Found in Pinecone' : 'Not found in Pinecone'}`);
-
-            if (!found) missingCount++;
-        }
-
-        // If messages are missing, trigger a full sync
-        if (missingCount > 0) {
-            console.log(`\n[PineconeTest] Found ${missingCount} messages missing from Pinecone`);
-            console.log('[PineconeTest] Starting full sync...');
-            await vectorService.forceFullSync();
-        }
-
-        // Clean up
-        await prismaService.$disconnect();
-        console.log('\n[PineconeTest] Test completed successfully');
-
-    } catch (error) {
-        console.error('[PineconeTest] Error during test:', error);
-        process.exit(1);
-    }
+    // Test semantic search
+    console.log('\n[Test] Testing semantic search...');
+    const semanticResults = await vectorService.queryVectors("Tell me about security issues", { k: 5 });
 }
 
-// Run the test
-testPineconeContents().catch(console.error); 
+inspectVectorStore().catch(console.error);

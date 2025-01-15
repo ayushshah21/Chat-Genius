@@ -80,7 +80,7 @@ async function testRAGFunctionality() {
 
             let found = false;
             for (const pattern of searchPatterns) {
-                const results = await vectorService.queryVectors(pattern, 1);
+                const results = await vectorService.queryVectors(pattern, { k: 1 });
                 if (results.length > 0) {
                     found = true;
                     console.log(`[RAGTest] ✓ Document verified:`, {
@@ -150,12 +150,12 @@ async function testRAGFunctionality() {
         for (const { query, alternateQueries, expectedKeywords } of testQueries) {
             console.log(`\n[RAGTest] Testing query: "${query}"`);
 
-            let searchResults = await vectorService.queryVectors(query, 5);
+            let searchResults = await vectorService.queryVectors(query, { k: 5 });
 
             if (searchResults.length === 0) {
                 console.log('[RAGTest] No results with main query, trying alternates...');
                 for (const altQuery of alternateQueries) {
-                    const altResults = await vectorService.queryVectors(altQuery, 3);
+                    const altResults = await vectorService.queryVectors(altQuery, { k: 3 });
                     if (altResults.length > 0) {
                         searchResults = altResults;
                         break;
