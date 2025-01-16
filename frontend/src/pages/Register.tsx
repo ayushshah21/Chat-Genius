@@ -56,8 +56,12 @@ export default function Register() {
 
       if (res.data.token) {
         localStorage.setItem("token", res.data.token);
-        if (res.data.user?.id) {
+        if (res.data.user) {
           localStorage.setItem("userId", res.data.user.id);
+          localStorage.setItem("userName", res.data.user.name || "");
+          localStorage.setItem("userEmail", res.data.user.email);
+          localStorage.setItem("userAvatar", res.data.user.avatarUrl || "");
+          localStorage.setItem("userStatus", res.data.user.status || "online");
         }
 
         // Initialize socket with the new token

@@ -31,6 +31,10 @@ export default function Login() {
       const { token, user } = response.data;
       localStorage.setItem("token", token);
       localStorage.setItem("userId", user.id);
+      localStorage.setItem("userName", user.name || "");
+      localStorage.setItem("userEmail", user.email);
+      localStorage.setItem("userAvatar", user.avatarUrl || "");
+      localStorage.setItem("userStatus", user.status || "online");
 
       // Initialize socket with the new token
       initSocket(token);

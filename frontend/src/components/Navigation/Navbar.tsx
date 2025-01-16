@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, User, LogOut, Sparkles, Menu } from "lucide-react";
+import { Search, LogOut, Sparkles, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
@@ -392,7 +392,16 @@ export default function Navbar({ onToggleSidebar }: Props) {
           className="p-2 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200"
           title="Profile"
         >
-          <User className="w-5 h-5" />
+          <img
+            src={
+              localStorage.getItem("userAvatar") ||
+              `https://ui-avatars.com/api/?name=${
+                localStorage.getItem("userName") || "User"
+              }&background=random`
+            }
+            alt={localStorage.getItem("userName") || "User"}
+            className="w-8 h-8 rounded-full"
+          />
         </button>
         <button
           onClick={handleLogout}
