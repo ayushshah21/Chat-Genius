@@ -594,7 +594,7 @@ export class VectorService {
     }
 
     private async initializeQAChain() {
-        const template = `You are a helpful AI assistant answering questions based on chat history.
+        const template = `You are analyzing conversations to find relevant information. Your task is to find and summarize information that matches the question.
 
 Context from conversations (most recent first):
 {context}
@@ -602,13 +602,13 @@ Context from conversations (most recent first):
 Question: {question}
 
 Instructions:
-1. Use specific details from the context if available
-2. If the context doesn't contain relevant information, say so
-3. Keep responses concise (2-3 sentences)
-4. You can reference information from any channel, but don't share private DM contents
-5. If you see specific details (names, numbers, dates), include them in your answer
+1. Only use information directly stated in the context
+2. If the context doesn't contain relevant information, say "No relevant information found"
+3. Keep responses focused and specific
+4. Include specific details, names, and dates when available
+5. Maintain a natural, conversational tone
 
-Answer:`;
+Response:`;
 
         const qaPrompt = PromptTemplate.fromTemplate(template);
 
@@ -762,5 +762,59 @@ Answer:`;
         }
 
         return true;
+    }
+
+    /**
+     * Get user-specific messages for mimicking their style
+     */
+    async getUserSpecificMessages(userId: string, limit: number = 50): Promise<VectorSearchResult[]> {
+        console.log('[VectorService] Getting user-specific messages:', { userId, limit });
+
+        try {
+            // Enhanced retriever options with MMR for diversity
+            const retrieverOptions = {
+                k: limit,
+                searchType: "mmr" as const,
+                searchKwargs: {
+                    fetchK: limit * 2,  // Fetch more for better diversity
+                    lambda: 0.7,        // Balance between relevance and diversity
+                    k: limit
+                },
+                filter: {
+                    $and: [
+                        { userId: { $eq: userId } },
+                        { isAI: { $eq: false } }  // Only get non-AI messages
+                    ]
+                }
+            };
+
+            const retriever = this.vectorStore.asRetriever(retrieverOptions);
+            const results = await retriever.invoke("");  // Empty query to get recent messages
+
+            // Process and score results
+            const processedResults = results.map(doc => {
+                const metadata = doc.metadata as VectorMetadata;
+                const age = (Date.now() - new Date(metadata.createdAt).getTime()) / (1000 * 60); // age in minutes
+                const recencyBoost = Math.exp(-age / 1000); // Exponential decay based on age
+
+                // Boost longer, more substantive messages
+                const lengthBoost = Math.min(doc.pageContent.length / 100, 1.5);
+
+                // Final score combines recency and length
+                const score = 0.5 + (recencyBoost * 0.3) + (lengthBoost * 0.2);
+
+                return {
+                    pageContent: doc.pageContent,
+                    metadata,
+                    score
+                };
+            });
+
+            // Sort by score and return
+            return processedResults.sort((a, b) => b.score - a.score);
+        } catch (error) {
+            console.error('[VectorService] Error getting user messages:', error);
+            throw error;
+        }
     }
 }

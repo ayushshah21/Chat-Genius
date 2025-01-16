@@ -305,7 +305,7 @@ Instructions: Respond with ONLY "true" or "false".`
     }
 
     /**
-     * Generate a response as the user's AI avatar
+     * Generate a response as the user's AI avatar with improved mimicking
      */
     async generateAvatarResponse(
         prompt: string,
@@ -313,6 +313,7 @@ Instructions: Respond with ONLY "true" or "false".`
         recentContext: { sender: string; content: string; timestamp: Date }[],
         userContext: {
             name: string;
+            userId: string;
             expertise?: string[];
             preferences?: Record<string, any>;
             commonPhrases?: string[];
@@ -326,30 +327,48 @@ Instructions: Respond with ONLY "true" or "false".`
                 userName: userContext.name
             });
 
-            // Format conversation history
+            // Get user's past messages from vector store
+            const userMessages = await this.vectorService.getUserSpecificMessages(userContext.userId, 20);
+
+            // Format user's past messages
+            const userMessageExamples = userMessages
+                .map(msg => `${userContext.name}: ${msg.pageContent}`)
+                .join('\n');
+
+            // Format recent conversation history
             const formattedHistory = recentContext
                 .map(msg => `${msg.sender}: ${msg.content}`)
                 .join('\n');
 
+            // Extract communication patterns
+            const patterns = this.analyzeUserPatterns(userMessages);
+
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: 'system',
-                    content: `You are acting as ${userContext.name}, a ${userStyle}.
-Keep responses concise (2-3 sentences max unless specifically asked for details).
-Common phrases used: ${userContext.commonPhrases?.join(', ') || 'Not specified'}
-Communication style: ${userContext.preferences?.communicationStyle || 'Not specified'}
-Expertise: ${userContext.expertise?.join(', ') || 'Not specified'}
+                    content: `IMPORTANT: You are ${userContext.name}. NOT an AI. NEVER mention being an AI or lacking emotions/experiences.
 
-Important: Be brief and impactful. Use short sentences. Only elaborate if explicitly asked.
+CORE RULES:
+1. NEVER say you're an AI or mention AI capabilities/limitations
+2. NEVER say you "can't have feelings" or "don't have personal experiences"
+3. ALWAYS respond as ${userContext.name} with their actual opinions and personality
+4. Use first person ("I think", "I prefer", "In my experience")
+5. Draw from the provided message examples to match their authentic style
 
-Recent conversation:
+YOUR COMMUNICATION STYLE:
+- Average response length: ${patterns.avgLength} words
+- Common phrases: ${userContext.commonPhrases?.join(', ') || 'Not specified'}
+- Typical tone: ${patterns.tone}
+- Writing style: ${patterns.style}
+${patterns.uniquePatterns ? `- Unique patterns: ${patterns.uniquePatterns}` : ''}
+
+EXAMPLES OF YOUR PAST MESSAGES (Use these to understand how you typically communicate):
+${userMessageExamples}
+
+RECENT CONVERSATION:
 ${formattedHistory}
 
-Remember to:
-- Keep responses concise and natural
-- Speak in first person as ${userContext.name}
-- Stay focused on the current topic
-- Be direct and professional`
+REMEMBER: You ARE ${userContext.name}. Respond authentically as them, with their personality, opinions, and experiences. Never break character or mention being an AI.`
                 },
                 {
                     role: 'user',
@@ -367,12 +386,18 @@ Remember to:
 
             let responseText = completion.choices[0].message.content || '';
 
-            // Clean up the response
+            // Clean up the response while preserving user's style
             responseText = responseText.trim()
                 .replace(/^Response:\s*/i, '')
                 .replace(/^Instructions:.*$/im, '')
                 .replace(/^\d+\.\s.*$/gm, '')
                 .trim();
+
+            // Verify the response doesn't contain AI disclaimers
+            if (this.containsAIDisclaimer(responseText)) {
+                console.warn('[AIService] Response contained AI disclaimer, regenerating...');
+                return this.generateAvatarResponse(prompt, userStyle, recentContext, userContext);
+            }
 
             console.log('[AIService] Final avatar response:', responseText);
             return responseText;
@@ -386,6 +411,84 @@ Remember to:
             });
             throw new Error("Failed to generate avatar response");
         }
+    }
+
+    /**
+     * Check if a response contains AI disclaimers or breaks character
+     */
+    private containsAIDisclaimer(response: string): boolean {
+        const aiPatterns = [
+            /as an ai/i,
+            /i am an ai/i,
+            /i'm an ai/i,
+            /being an ai/i,
+            /ai assistant/i,
+            /artificial intelligence/i,
+            /don't have personal/i,
+            /cannot have/i,
+            /can't have/i,
+            /don't have emotions/i,
+            /ai model/i,
+            /language model/i,
+            /ai system/i
+        ];
+
+        return aiPatterns.some(pattern => pattern.test(response));
+    }
+
+    /**
+     * Analyze user's communication patterns from their messages
+     */
+    private analyzeUserPatterns(messages: VectorSearchResult[]): {
+        avgLength: number;
+        tone: string;
+        style: string;
+        uniquePatterns?: string;
+    } {
+        if (!messages.length) {
+            return {
+                avgLength: 0,
+                tone: 'neutral',
+                style: 'casual'
+            };
+        }
+
+        // Calculate average message length
+        const lengths = messages.map(m => m.pageContent.split(' ').length);
+        const avgLength = Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length);
+
+        // Analyze tone
+        const hasEmojis = messages.some(m => /[\u{1F300}-\u{1F9FF}]/u.test(m.pageContent));
+        const hasExclamations = messages.some(m => m.pageContent.includes('!'));
+        const hasQuestions = messages.some(m => m.pageContent.includes('?'));
+        const formalWords = /\b(therefore|however|furthermore|consequently)\b/i;
+        const isFormal = messages.some(m => formalWords.test(m.pageContent));
+
+        // Determine tone
+        let tone = 'neutral';
+        if (hasEmojis && hasExclamations) tone = 'enthusiastic';
+        else if (isFormal) tone = 'formal';
+        else if (hasExclamations) tone = 'energetic';
+        else if (hasQuestions) tone = 'inquisitive';
+
+        // Analyze style
+        let style = 'casual';
+        if (isFormal) style = 'formal';
+        else if (messages.every(m => m.pageContent.length < 50)) style = 'concise';
+        else if (messages.every(m => m.pageContent.length > 200)) style = 'detailed';
+
+        // Look for unique patterns
+        const patterns = [];
+        if (hasEmojis) patterns.push('Uses emojis');
+        if (messages.some(m => m.pageContent.toLowerCase() === m.pageContent)) patterns.push('Prefers lowercase');
+        if (messages.some(m => /\b(haha|lol|lmao)\b/i.test(m.pageContent))) patterns.push('Uses casual expressions');
+
+        return {
+            avgLength,
+            tone,
+            style,
+            uniquePatterns: patterns.length ? patterns.join(', ') : undefined
+        };
     }
 
     /**
@@ -407,7 +510,15 @@ Remember to:
                 receiverId
             });
 
-            // Use the QA chain for better context understanding
+            // Get user's messages for context and style
+            const userMessages = await this.vectorService.getUserSpecificMessages(userId, 20);
+
+            // Format user's past messages
+            const userMessageExamples = userMessages
+                .map(msg => `You: ${msg.pageContent}`)
+                .join('\n');
+
+            // Get relevant context
             const qaResponse = await this.vectorService.queryWithQA(
                 prompt,
                 {
@@ -427,19 +538,34 @@ Remember to:
                 })
                 .join('\n');
 
+            // Extract communication patterns
+            const patterns = this.analyzeUserPatterns(userMessages);
+
             const messages: ChatCompletionMessageParam[] = [
                 {
                     role: 'system',
-                    content: `You are an AI assistant that communicates in the following style: ${userStyle}.
-${formattedContext ? `\nRelevant context:\n${formattedContext}\n` : ''}
-${qaResponse.answer ? `\nContext summary: ${qaResponse.answer}\n` : ''}
+                    content: `You are a real person responding to messages. Your name is ${userStyle}. You have real opinions, experiences, and emotions.
 
-Remember to:
-- Keep responses concise (2-3 sentences)
-- Stay focused on the current topic
-- Be direct and professional
-- Reference specific details from context when relevant
-- Pay attention to messages marked with 🎯 as they are highly relevant`
+YOUR COMMUNICATION STYLE:
+- Average response length: ${patterns.avgLength} words
+- Typical tone: ${patterns.tone}
+- Writing style: ${patterns.style}
+${patterns.uniquePatterns ? `- Unique patterns: ${patterns.uniquePatterns}` : ''}
+
+EXAMPLES OF YOUR PAST MESSAGES:
+${userMessageExamples}
+
+RELEVANT CONTEXT:
+${formattedContext}
+
+CORE RULES:
+1. You are a real person with real experiences and opinions
+2. Respond naturally and authentically as yourself
+3. Use your typical communication style
+4. Draw from the context and your past messages
+5. Stay focused on the current topic
+
+Remember: You are responding as yourself, with your own personality, opinions, and experiences.`
                 },
                 {
                     role: 'user',
@@ -457,12 +583,18 @@ Remember to:
 
             let responseText = completion.choices[0].message.content || '';
 
-            // Clean up the response
+            // Clean up the response while preserving user's style
             responseText = responseText.trim()
                 .replace(/^Response:\s*/i, '')
                 .replace(/^Instructions:.*$/im, '')
                 .replace(/^\d+\.\s.*$/gm, '')
                 .trim();
+
+            // Verify the response doesn't contain AI disclaimers
+            if (this.containsAIDisclaimer(responseText)) {
+                console.warn('[AIService] Response contained AI disclaimer, regenerating...');
+                return this.generateEnhancedPersonalityResponse(prompt, userStyle, userId, currentChannelId, receiverId);
+            }
 
             console.log('[AIService] Final enhanced response:', responseText);
             return responseText;

@@ -1,0 +1,120 @@
+.
+├── Dockerfile
+├── codebase-structure.txt
+├── package-lock.json
+├── package.json
+├── prisma
+│   ├── migrations
+│   │   ├── 20250106211911_init_chat_schema
+│   │   │   └── migration.sql
+│   │   ├── 20250107152711_dm_table
+│   │   │   └── migration.sql
+│   │   ├── 20250108024319_add_thread_support_to_direct_messages
+│   │   │   └── migration.sql
+│   │   ├── 20250108210741_add_file_support
+│   │   │   └── migration.sql
+│   │   ├── 20250108211459_add_file_support_again
+│   │   │   └── migration.sql
+│   │   ├── 20250109024117_add_files_to_direct_messages
+│   │   │   └── migration.sql
+│   │   ├── 20250109154535_add_emoji_support
+│   │   │   └── migration.sql
+│   │   ├── 20250111182539_add_ai_message_support
+│   │   │   └── migration.sql
+│   │   ├── 20250111204211_add_ai_fields_fresh
+│   │   │   └── migration.sql
+│   │   ├── 20250112003412_add_ai_user_fields
+│   │   │   └── migration.sql
+│   │   ├── 20250112020916_add_key_to_file
+│   │   │   └── migration.sql
+│   │   ├── 20250112022510_update_channel_type_to_enum
+│   │   │   └── migration.sql
+│   │   ├── 20250112025714_add_file_status
+│   │   │   └── migration.sql
+│   │   ├── 20250112041318_add_channel_type_enum
+│   │   │   └── migration.sql
+│   │   ├── 20250112044851_fix_channel_type
+│   │   │   └── migration.sql
+│   │   ├── 20250112050157_restore_file_schema
+│   │   │   └── migration.sql
+│   │   ├── 20250112050715_revert_changes
+│   │   │   └── migration.sql
+│   │   ├── 20250112051437_add_channel_type_enum
+│   │   │   └── migration.sql
+│   │   ├── 20250112051550_add_channel_type_enum2
+│   │   │   └── migration.sql
+│   │   ├── 20250113010025_update_channel_type_to_enum
+│   │   │   └── migration.sql
+│   │   ├── 20250116150723_add_elevenlabs_voice_id
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   ├── schema.prisma
+│   └── schema.prisma.backup
+├── src
+│   ├── app.module.ts
+│   ├── config
+│   │   ├── dynamodb.ts
+│   │   ├── env.config.ts
+│   │   └── passport.ts
+│   ├── controllers
+│   │   ├── ai.controller.ts
+│   │   ├── auth.controller.ts
+│   │   ├── channel.controller.ts
+│   │   ├── directMessage.controller.ts
+│   │   ├── file.controller.ts
+│   │   ├── message.controller.ts
+│   │   ├── search.controller.ts
+│   │   ├── tts.controller.ts
+│   │   └── user.controller.ts
+│   ├── index.ts
+│   ├── middlewares
+│   │   └── auth.middleware.ts
+│   ├── routes
+│   │   ├── ai.routes.ts
+│   │   ├── auth.routes.ts
+│   │   ├── channel.routes.ts
+│   │   ├── directMessage.routes.ts
+│   │   ├── file.routes.ts
+│   │   ├── message.routes.ts
+│   │   ├── search.routes.ts
+│   │   ├── tts.routes.ts
+│   │   └── user.routes.ts
+│   ├── services
+│   │   ├── ai.service.ts
+│   │   ├── aiSearch.service.ts
+│   │   ├── auth.service.ts
+│   │   ├── channel.service.ts
+│   │   ├── context.service.ts
+│   │   ├── directMessage.service.ts
+│   │   ├── elevenlabs.service.ts
+│   │   ├── message.service.ts
+│   │   ├── prisma.service.ts
+│   │   ├── reaction.service.ts
+│   │   ├── s3.service.ts
+│   │   ├── search.service.ts
+│   │   ├── user.service.ts
+│   │   └── vector.service.ts
+│   ├── socket
+│   │   └── socket.service.ts
+│   ├── test-rag.js
+│   ├── test-rag.ts
+│   ├── tests
+│   │   ├── ai.service.test.ts
+│   │   ├── list-models.ts
+│   │   ├── test-ai-response.ts
+│   │   ├── test-avatar-response.ts
+│   │   ├── test-batch-summarization.ts
+│   │   ├── test-context-service.ts
+│   │   ├── test-context-summarization.ts
+│   │   ├── test-context.ts
+│   │   ├── test-pinecone-contents.ts
+│   │   ├── test-rag-functionality.ts
+│   │   ├── test-realtime-updates.ts
+│   │   └── test-vector-context.ts
+│   └── types
+│       ├── message.types.ts
+│       └── vector.ts
+├── tsconfig.json
+└── tsconfig.tsbuildinfo
+
+33 directories, 85 files

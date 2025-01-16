@@ -34,6 +34,7 @@ async function testAvatarResponse() {
         // Test user context
         const userContext = {
             name: "Sarah Connor",
+            userId: "test-user-123",
             expertise: ["full-stack development", "system design", "debugging nightmares"],
             preferences: {
                 communicationStyle: "direct, sarcastic, and concise",
