@@ -426,7 +426,6 @@ export async function setupSocketIO(server: Server) {
                     if (data.parentId) {
                         await emitReplyEvent(io, message, true);
                     } else {
-                        // Emit original message first
                         const dmRoomId = [decoded.userId, data.receiverId].sort().join(':');
                         const roomId = `dm:${dmRoomId}`;
 
@@ -443,6 +442,34 @@ export async function setupSocketIO(server: Server) {
                         });
 
                         io.to(roomId).emit('new_dm', message);
+                    }
+
+                    // Add DM indexing
+                    if (message.content) {
+                        const dmWithSender = {
+                            ...message,
+                            senderId: message.sender.id,
+                            receiverId: message.receiver.id,
+                            sender: message.sender,
+                            receiver: message.receiver
+                        };
+
+                        // Handle indexing asynchronously
+                        contextService.handleRealTimeUpdate(dmWithSender, 'dm')
+                            .then(result => {
+                                if (!result.success) {
+                                    console.error('[SocketService] Failed to index DM:', {
+                                        messageId: message.id,
+                                        error: result.error
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('[SocketService] Error during DM indexing:', {
+                                    messageId: message.id,
+                                    error: error instanceof Error ? error.message : error
+                                });
+                            });
                     }
 
                     // Then handle auto-response if enabled
@@ -1230,6 +1257,31 @@ async function emitReplyEvent(io: Server, reply: Message | DirectMessage, isDire
                 };
 
                 io.to(`dm:${dmRoomId}`).emit('new_reply', replyData);
+
+                // Add DM indexing
+                if (dm.content) {
+                    const dmWithSender = {
+                        ...dm,
+                        sender: parentMessage.sender,
+                        receiver: parentMessage.receiver
+                    } as DirectMessageWithSender;
+
+                    contextService.handleRealTimeUpdate(dmWithSender, 'dm')
+                        .then(result => {
+                            if (!result.success) {
+                                console.error('[SocketService] Failed to index DM reply:', {
+                                    replyId: dm.id,
+                                    error: result.error
+                                });
+                            }
+                        })
+                        .catch(error => {
+                            console.error('[SocketService] Error during DM reply indexing:', {
+                                replyId: dm.id,
+                                error: error instanceof Error ? error.message : error
+                            });
+                        });
+                }
             }
         }
     } catch (error) {

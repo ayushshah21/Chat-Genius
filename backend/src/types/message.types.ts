@@ -14,7 +14,13 @@ export interface DirectMessageWithSender {
     id: string;
     content: string | null;
     senderId: string;
+    receiverId: string;
     sender: {
+        id: string;
+        name: string | null;
+    };
+    receiver: {
+        id: string;
         name: string | null;
     };
     channelId?: string;

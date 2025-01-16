@@ -3,12 +3,13 @@ import { DynamoDBClient, GetItemCommand, PutItemCommand } from '@aws-sdk/client-
 import { dynamoDbClient, CHAT_MEMORY_TABLE } from '../config/dynamodb';
 import { AIService } from './ai.service';
 import { ConfigService } from '@nestjs/config';
-import { VectorService, VectorMetadata, VectorSearchResult } from './vector.service';
+import { VectorService, VectorSearchResult } from './vector.service';
 import { PrismaService } from './prisma.service';
 import { Injectable } from '@nestjs/common';
 import { Document } from 'langchain/document';
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { MessageWithUser, DirectMessageWithSender } from '../types/message.types';
+import { VectorMetadata } from '../types/vector';
 
 const prisma = new PrismaClient();
 
@@ -62,7 +63,9 @@ export class ContextService {
                 userName: ('sender' in message ? message.sender?.name : message.user?.name) || null,
                 channelId: type === 'channel' ? ('channelId' in message ? message.channelId : undefined) : undefined,
                 createdAt: message.createdAt.toISOString(),
-                isAI: message.isAI
+                isAI: message.isAI,
+                senderId: type === 'dm' && 'senderId' in message ? message.senderId : undefined,
+                receiverId: type === 'dm' && 'receiverId' in message ? message.receiverId : undefined
             };
 
             // Split and store message

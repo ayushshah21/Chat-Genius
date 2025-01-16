@@ -17,6 +17,20 @@ interface AISearchResponse {
     additionalContext?: string;
 }
 
+interface MessageMetadata {
+    messageId: string;
+    userId: string;
+    userName: string | null;
+    channelId?: string;
+    channelName?: string;
+    type: 'channel' | 'dm' | 'summary';
+    createdAt: string;
+    senderId?: string;
+    receiverId?: string;
+    otherUserId?: string;
+    pineconeScore?: number;
+}
+
 @Injectable()
 export class AISearchService {
     private readonly CACHE_TTL = 1000 * 60 * 60; // 1 hour
@@ -31,7 +45,7 @@ export class AISearchService {
     private reciprocalRankFusion(
         listOfRankedArrays: VectorSearchResult[][],
         query: string,
-        kConstant: number = 20
+        kConstant: number = 10
     ): VectorSearchResult[] {
         const fusionMap = new Map<string, {
             doc: VectorSearchResult;
@@ -53,8 +67,13 @@ export class AISearchService {
                 const key = doc.metadata.messageId;
                 const content = doc.pageContent.toLowerCase();
 
-                // Base RRF score with position boost
-                let score = 1 / (kConstant + (rank + 1));
+                // Base RRF score with position boost and original score weight
+                let score = (1 / (kConstant + (rank + 1))) * (doc.score || 0.5);
+
+                // Add type-based boost
+                if (doc.metadata.type === 'dm') {
+                    score *= 1.2; // 20% boost for DMs to counter channel bias
+                }
 
                 // Content relevance scoring
                 const contentScore = this.calculateContentScore(content, query, queryIntent);
@@ -66,7 +85,7 @@ export class AISearchService {
                     score *= 1.5;
                 }
 
-                // Combine scores with existing entry or create new
+                // Combine scores
                 if (!fusionMap.has(key)) {
                     fusionMap.set(key, {
                         doc,
@@ -84,16 +103,7 @@ export class AISearchService {
         }
 
         return Array.from(fusionMap.values())
-            .sort((a, b) => {
-                // Multi-factor sorting
-                if (queryIntent.isQuantityQuestion) {
-                    if (a.hasNumber !== b.hasNumber) return a.hasNumber ? -1 : 1;
-                }
-                if (queryIntent.isCurrentQuestion) {
-                    if (a.isRecent !== b.isRecent) return a.isRecent ? -1 : 1;
-                }
-                return b.sumScore - a.sumScore;
-            })
+            .sort((a, b) => b.sumScore - a.sumScore)
             .map(entry => ({
                 ...entry.doc,
                 score: entry.sumScore
@@ -261,13 +271,14 @@ export class AISearchService {
             })))
         });
 
-        // 2. Debug RRF results
-        const fusedResults = this.reciprocalRankFusion(resultSets, query);
+        // 2. Debug RRF results with reduced kConstant
+        const fusedResults = this.reciprocalRankFusion(resultSets, query, 10); // Reduced from 20 to 10
         console.log('[AISearchService] After RRF fusion:', {
             beforeFilter: resultSets.reduce((acc, set) => acc + set.length, 0),
             afterFusion: fusedResults.length,
             sampleScores: fusedResults.slice(0, 3).map(msg => ({
                 score: msg.score,
+                type: msg.metadata.type,
                 content: msg.pageContent.substring(0, 50)
             }))
         });
@@ -279,68 +290,105 @@ export class AISearchService {
             userId
         });
 
-        const accessibleMessageIds = await this.prismaService.message.findMany({
-            where: {
-                id: { in: messageIds },
-                OR: [
-                    { channel: { type: 'PUBLIC' } },
-                    { channel: { members: { some: { id: userId } } } },
-                    { userId },
-                    {
-                        channel: {
-                            type: 'DIRECT',
-                            members: { some: { id: userId } }
-                        }
-                    }
-                ]
-            },
-            select: {
-                id: true,
-                channel: {
-                    select: {
-                        id: true,
-                        type: true
-                    }
+        // Get accessible messages from both tables
+        const [accessibleChannelMsgs, accessibleDMs] = await Promise.all([
+            this.prismaService.message.findMany({
+                where: {
+                    id: { in: messageIds }
                 }
-            }
-        });
+            }),
+            this.prismaService.directMessage.findMany({
+                where: {
+                    id: { in: messageIds },
+                    OR: [
+                        { senderId: userId },
+                        { receiverId: userId }
+                    ]
+                },
+                select: {
+                    id: true,
+                    senderId: true,
+                    receiverId: true
+                }
+            })
+        ]);
 
-        console.log('[AISearchService] Permission check results:', {
-            checkedIds: messageIds.length,
-            accessibleIds: accessibleMessageIds.length,
-            channels: accessibleMessageIds.map(m => ({
-                messageId: m.id,
-                channelType: m.channel?.type
-            }))
-        });
+        // Combine permitted IDs from both tables
+        const permittedIds = new Set([
+            ...accessibleChannelMsgs.map(m => m.id),
+            ...accessibleDMs.map(m => m.id)
+        ]);
 
-        // 4. Filter out unpermitted
-        const permittedIds = new Set(accessibleMessageIds.map(m => m.id));
-        let filteredMessages = fusedResults
-            .filter(msg => permittedIds.has(msg.metadata.messageId));
+        // Filter messages based on combined permissions
+        let filteredMessages = fusedResults.filter(msg => {
+            const isDM = msg.metadata.type === 'dm';
+            const dmMessage = isDM ? accessibleDMs.find(m => m.id === msg.metadata.messageId) : null;
 
-        // 5. Apply cross-encoder reranking for more accurate relevance
-        try {
-            console.log('[AISearchService] Applying cross-encoder reranking...');
-            filteredMessages = await this.aiService.crossEncoderRerank(query, filteredMessages);
-        } catch (error) {
-            console.error('[AISearchService] Cross-encoder reranking failed:', error);
-            // Continue with original ranking if reranking fails
-        }
-
-        // 6. Take top results
-        filteredMessages = filteredMessages.slice(0, 5);
-
-        console.log('[AISearchService] Final filtered messages:', {
-            before: fusedResults.length,
-            afterPermissions: filteredMessages.length,
-            messages: filteredMessages.map(msg => ({
-                content: msg.pageContent.substring(0, 50) + '...',
+            console.log('[AISearchService] Processing message:', {
                 messageId: msg.metadata.messageId,
-                channelId: msg.metadata.channelId,
-                score: msg.score
-            }))
+                isDM,
+                foundDMMessage: !!dmMessage,
+                dmMessageDetails: dmMessage ? {
+                    id: dmMessage.id,
+                    senderId: dmMessage.senderId,
+                    receiverId: dmMessage.receiverId
+                } : null,
+                currentUserId: userId
+            });
+
+            if (isDM && dmMessage) {
+                // Add sender/receiver info to metadata for DMs
+                msg.metadata.senderId = dmMessage.senderId;
+                msg.metadata.receiverId = dmMessage.receiverId;
+                msg.metadata.otherUserId = dmMessage.senderId === userId ? dmMessage.receiverId : dmMessage.senderId;
+
+                console.log('[AISearchService] Set DM metadata:', {
+                    messageId: msg.metadata.messageId,
+                    senderId: msg.metadata.senderId,
+                    receiverId: msg.metadata.receiverId,
+                    otherUserId: msg.metadata.otherUserId,
+                    type: msg.metadata.type
+                });
+            }
+
+            return permittedIds.has(msg.metadata.messageId);
         });
+
+        // 5. Skip cross-encoder reranking and apply DM boost
+        try {
+            console.log('[AISearchService] Final messages before evidence:', filteredMessages.map(msg => ({
+                messageId: msg.metadata.messageId,
+                type: msg.metadata.type,
+                senderId: msg.metadata.senderId,
+                receiverId: msg.metadata.receiverId,
+                otherUserId: msg.metadata.otherUserId
+            })));
+
+            console.log('[AISearchService] Skipping cross-encoder reranking, applying DM boost...');
+
+            // Apply DM boost and sort by final score
+            filteredMessages = filteredMessages.map(msg => ({
+                ...msg,
+                score: msg.metadata.type === 'dm' ? msg.score + 0.2 : msg.score // 20% boost for DMs
+            })).sort((a, b) => b.score - a.score);
+
+            // Take top results
+            filteredMessages = filteredMessages.slice(0, 10);
+
+            console.log('[AISearchService] Final filtered messages:', {
+                before: fusedResults.length,
+                afterPermissions: filteredMessages.length,
+                messages: filteredMessages.map(msg => ({
+                    content: msg.pageContent.slice(0, 50) + '...',
+                    messageId: msg.metadata.messageId,
+                    channelId: msg.metadata.channelId,
+                    type: msg.metadata.type,
+                    score: msg.score
+                }))
+            });
+        } catch (error) {
+            console.error('[AISearchService] Error in message processing:', error);
+        }
 
         if (filteredMessages.length === 0) {
             return {
@@ -358,15 +406,26 @@ export class AISearchService {
         // 8. Generate AI response
         const answer = await this.aiService.generateResponse(query, context);
 
-        return {
-            answer,
-            evidence: filteredMessages.map(msg => ({
+        const evidence = filteredMessages.map(msg => {
+            const evidenceItem = {
                 content: msg.pageContent,
                 messageId: msg.metadata.messageId,
                 channelId: msg.metadata.channelId,
                 timestamp: msg.metadata.createdAt,
-                userName: msg.metadata.userName || undefined
-            })),
+                userName: msg.metadata.userName || undefined,
+                type: msg.metadata.type,
+                senderId: msg.metadata.senderId,
+                receiverId: msg.metadata.receiverId,
+                otherUserId: msg.metadata.otherUserId
+            };
+
+            console.log('[AISearchService] Created evidence item:', evidenceItem);
+            return evidenceItem;
+        });
+
+        return {
+            answer,
+            evidence,
             additionalContext: `Found ${filteredMessages.length} relevant messages`
         };
     }

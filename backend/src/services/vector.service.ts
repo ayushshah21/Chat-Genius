@@ -216,42 +216,42 @@ export class VectorService {
     /**
      * Query the vector store for similar documents
      */
-    async queryVectors(query: string, options?: {
+    async queryVectors(query: string, options: {
         k?: number;
         isDM?: boolean;
         userId?: string;
-    }): Promise<VectorSearchResult[]> {
+    } = {}): Promise<VectorSearchResult[]> {
         const numResults = options?.k || 10;
         console.log('[VectorService] Starting vector query:', { query, numResults, options });
 
         try {
             // Enhanced retriever options with better MMR settings
-            const retrieverOptions: any = {
-                searchType: "mmr",
+            const retrieverOptions = {
+                k: numResults,
+                searchType: "mmr" as const,  // Type assertion to literal "mmr"
                 searchKwargs: {
                     fetchK: numResults * 4,  // Increased fetch size for better candidate pool
-                    lambda: 0.5,  // Adjusted for better balance between relevance and diversity
+                    lambda: 0.5,  // Adjusted for balance between relevance and diversity
                     k: numResults
+                },
+                filter: {
+                    $or: [
+                        { type: { $eq: 'channel' } },
+                        {
+                            $and: [
+                                { type: { $eq: 'dm' } },
+                                { senderId: { $eq: options.userId } }
+                            ]
+                        },
+                        {
+                            $and: [
+                                { type: { $eq: 'dm' } },
+                                { receiverId: { $eq: options.userId } }
+                            ]
+                        }
+                    ]
                 }
             };
-
-            // Improved filter logic for better context sharing
-            if (options?.isDM && options?.userId) {
-                // For DMs, include:
-                // 1. User's direct messages
-                // 2. Public channel messages
-                // 3. Relevant summaries
-                retrieverOptions.filter = {
-                    OR: [
-                        { type: 'dm', userId: options.userId },
-                        { type: 'channel' },
-                        { type: 'summary' }
-                    ]
-                };
-            }
-
-            // MMR-based retriever
-            const retriever = this.vectorStore.asRetriever(retrieverOptions);
 
             console.log('[VectorService] Configured MMR retriever:', {
                 numResults,
@@ -259,6 +259,8 @@ export class VectorService {
                 lambda: 0.5,
                 filter: retrieverOptions.filter || 'none'
             });
+
+            const retriever = this.vectorStore.asRetriever(retrieverOptions);
 
             const results = await retriever.invoke(query);
 
@@ -275,19 +277,40 @@ export class VectorService {
                 const metadata = doc.metadata as VectorMetadata;
                 const age = (Date.now() - new Date(metadata.createdAt).getTime()) / (1000 * 60); // age in minutes
                 const recencyBoost = Math.exp(-age / 1000); // Exponential decay based on age
-                const score = (doc.metadata.score || 0.5) * (1 + recencyBoost);
+
+                // Store original Pinecone score
+                const pineconeScore = doc.metadata.score || 0.5;
+
+                // Combine Pinecone score with recency
+                const score = pineconeScore * (1 + recencyBoost);
+
+                // Add DM boost if applicable
+                const dmBoost = metadata.type === 'dm' ? 0.05 : 0;
+                const finalScore = score + dmBoost;
+
+                console.log('[VectorService] Score calculation:', {
+                    messageId: metadata.messageId,
+                    type: metadata.type,
+                    pineconeScore,
+                    recencyBoost,
+                    dmBoost,
+                    finalScore
+                });
 
                 return {
                     pageContent: doc.pageContent,
-                    metadata: metadata,
-                    score: score
+                    metadata: {
+                        ...metadata,
+                        pineconeScore // Preserve original score
+                    },
+                    score: finalScore
                 };
             });
 
             // Sort by enhanced score and return top results
             return processedResults
                 .sort((a, b) => b.score - a.score)
-                .slice(0, numResults);
+                .slice(0, retrieverOptions.k);
 
         } catch (error) {
             console.error('[VectorService] Error in queryVectors:', {
