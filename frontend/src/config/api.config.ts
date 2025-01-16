@@ -46,6 +46,11 @@ export const API_CONFIG = {
         },
         AI: {
             SEARCH: '/api/ai/search'
+        },
+        TTS: {
+            GENERATE: '/api/text-to-speech',
+            VOICES: '/api/voices',
+            INITIALIZE: '/api/initialize-voice'
         }
     }
 }; 

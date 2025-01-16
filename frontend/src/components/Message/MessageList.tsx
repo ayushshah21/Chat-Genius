@@ -10,6 +10,7 @@ import { MessageCircle } from "lucide-react";
 import MessageInput from "./MessageInput";
 import EmojiReactions from "./EmojiReactions";
 import { DeleteButton } from "./DeleteButton";
+import TextToSpeech from "../TextToSpeech/TextToSpeech";
 
 interface Props {
   channelId?: string | null;
@@ -509,11 +510,16 @@ const MessageItem = React.forwardRef<
             />
           </div>
         </div>
-        {message.content && (
-          <p className="text-base text-[var(--text)] leading-relaxed">
-            {message.content}
-          </p>
-        )}
+        <div className="text-[var(--text)] break-words">
+          {message.content}
+          {message.content && (
+            <TextToSpeech
+              text={message.content}
+              userId={userInfo.id}
+              className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+          )}
+        </div>
         {message.files && message.files.length > 0 && (
           <div className="mt-3 space-y-2">
             {message.files.map((file) => (
