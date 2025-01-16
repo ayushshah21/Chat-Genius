@@ -32,6 +32,7 @@ model User {
   commonPhrases      String[] @default([])
   autoReplyEnabled   Boolean  @default(false)
   aiSettings         Json? // For additional AI-specific settings
+  elevenLabsVoiceId  String? // Store the user's ElevenLabs voice ID
 
   // Relations
   messages         Message[]
