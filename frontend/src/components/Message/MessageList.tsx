@@ -377,9 +377,13 @@ export default function MessageList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 h-full relative flex flex-col bg-[var(--background)]">
+    <div className="flex-1 overflow-y-auto p-2 sm:p-4 h-full relative flex flex-col bg-[var(--background)]">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
+      <div
+        className={`flex-1 overflow-y-auto ${
+          selectedThread ? "hidden sm:block" : "block"
+        }`}
+      >
         <div className="flex flex-col space-y-1 min-h-0">
           {[...messages].reverse().map((message) => (
             <div key={message.id}>
@@ -399,15 +403,17 @@ export default function MessageList({
 
       {/* Thread Panel */}
       {selectedThread && (
-        <ThreadPanel
-          parentMessage={selectedThread}
-          onClose={() => setSelectedThread(null)}
-        />
+        <div className="fixed inset-0 sm:inset-y-0 sm:right-0 sm:left-auto w-full sm:w-96 bg-[var(--background)] sm:border-l border-[var(--border)] z-40 flex flex-col">
+          <ThreadPanel
+            parentMessage={selectedThread}
+            onClose={() => setSelectedThread(null)}
+          />
+        </div>
       )}
 
       {/* Message Input - Only show when no thread is open */}
       {!selectedThread && (
-        <div className="pt-4 border-t border-[var(--border)] mt-auto">
+        <div className="mt-4">
           <MessageInput
             channelId={channelId}
             dmUserId={dmUserId}

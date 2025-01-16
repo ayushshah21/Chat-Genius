@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, User, LogOut, Sparkles } from "lucide-react";
+import { Search, User, LogOut, Sparkles, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
@@ -49,7 +49,11 @@ interface AISearchResult {
   additionalContext?: string;
 }
 
-export default function Navbar() {
+interface Props {
+  onToggleSidebar: () => void;
+}
+
+export default function Navbar({ onToggleSidebar }: Props) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -263,12 +267,18 @@ export default function Navbar() {
 
   return (
     <div className="h-14 bg-[var(--background-light)] border-b border-[var(--border)] flex items-center justify-between px-4">
-      {/* Left Side - Theme Selector */}
-      <div className="w-48">
+      {/* Left Side - Theme Selector and Menu */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleSidebar}
+          className="p-2 text-[var(--text)] hover:bg-[var(--background-hover)] rounded-lg transition-colors md:hidden"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
         <select
           value={theme}
           onChange={(e) => handleThemeChange(e.target.value)}
-          className="px-2 py-1 bg-[var(--input-bg)] text-[var(--text)] border border-[var(--border)] rounded hover:border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          className="px-2 py-1 bg-[var(--input-bg)] text-[var(--text)] border border-[var(--border)] rounded hover:border-[var(--border)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] hidden sm:block"
         >
           {Object.entries(themes).map(([value, label]) => (
             <option key={value} value={value}>
@@ -279,7 +289,10 @@ export default function Navbar() {
       </div>
 
       {/* Center - Search Bar */}
-      <div ref={searchRef} className="flex-1 max-w-2xl mx-auto relative">
+      <div
+        ref={searchRef}
+        className="flex-1 max-w-2xl mx-4 relative hidden sm:block"
+      >
         <div className="relative flex items-center gap-2">
           <div className="relative flex-1">
             <input
@@ -373,7 +386,7 @@ export default function Navbar() {
       </div>
 
       {/* Right Side Actions */}
-      <div className="w-48 flex items-center justify-end space-x-4">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => navigate("/profile")}
           className="p-2 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200"
@@ -383,10 +396,17 @@ export default function Navbar() {
         </button>
         <button
           onClick={handleLogout}
-          className="px-3 py-1.5 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200 flex items-center space-x-2"
+          className="hidden sm:flex px-3 py-1.5 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200 items-center space-x-2"
         >
           <LogOut className="w-5 h-5" />
           <span>Log out</span>
+        </button>
+        <button
+          onClick={handleLogout}
+          className="sm:hidden p-2 text-[var(--text)] hover:text-[var(--text)] hover:bg-[var(--background-hover)] rounded transition-colors duration-200"
+          title="Log out"
+        >
+          <LogOut className="w-5 h-5" />
         </button>
       </div>
     </div>

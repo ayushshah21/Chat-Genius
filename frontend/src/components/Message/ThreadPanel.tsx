@@ -103,16 +103,16 @@ export default function ThreadPanel({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-[var(--background)] text-[var(--text)] shadow-xl flex flex-col border-l border-[var(--border)]">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="p-4 border-b border-[var(--border)] flex justify-between items-center bg-[var(--background-light)]">
+      <div className="p-4 border-b border-[var(--border)] flex justify-between items-center bg-[var(--background-light)] sticky top-0">
         <div className="flex items-center space-x-2">
           <MessageSquare className="w-5 h-5 text-[var(--text-muted)]" />
-          <h3 className="text-lg font-semibold">Thread</h3>
+          <h3 className="text-lg font-semibold text-[var(--text)]">Thread</h3>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 hover:bg-[var(--background-hover)] rounded-full transition-colors duration-200"
+          className="p-2 hover:bg-[var(--background-hover)] rounded-lg transition-colors duration-200"
         >
           <X className="w-5 h-5 text-[var(--text-muted)] hover:text-[var(--text)]" />
         </button>
@@ -146,7 +146,7 @@ export default function ThreadPanel({
                 </span>
               </div>
               {parentMessage.content && (
-                <p className="text-base text-[var(--text)] mt-1 leading-relaxed">
+                <p className="text-base text-[var(--text)] mt-1 leading-relaxed break-words">
                   {parentMessage.content}
                 </p>
               )}
@@ -322,7 +322,7 @@ export default function ThreadPanel({
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-[var(--border)]">
+      <div className="p-4 border-t border-[var(--border)] sticky bottom-0 bg-[var(--background)]">
         <MessageInput
           parentId={parentMessage.id}
           channelId={

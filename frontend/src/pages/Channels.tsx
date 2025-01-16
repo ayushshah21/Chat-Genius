@@ -13,6 +13,7 @@ export default function Channels() {
   const messageId = searchParams.get("messageId");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const navigate = useNavigate();
 
   // Clear messageId from URL after initial highlight
@@ -62,11 +63,23 @@ export default function Channels() {
 
   return (
     <div className="flex flex-col h-screen">
-      <Navbar />
-      <div className="flex flex-1 overflow-hidden">
+      <Navbar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Overlay for mobile when sidebar is open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <div className="w-64 bg-[var(--sidebar-bg)] flex flex-col">
-          {/* Channel List */}
+        <div
+          className={`absolute md:relative w-64 bg-[var(--sidebar-bg)] flex flex-col h-full z-30 
+            transform transition-transform duration-300 ease-in-out
+            ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+            md:translate-x-0`}
+        >
           <div className="flex-1 overflow-y-auto">
             <ChannelList
               channels={channels}
@@ -78,7 +91,7 @@ export default function Channels() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 bg-[var(--background)]">
+        <div className="flex-1 bg-[var(--background)] overflow-hidden">
           <MessageList
             channelId={channelId}
             dmUserId={userId}
