@@ -184,13 +184,17 @@ export default function Navbar() {
     });
   };
 
-  const handleNavigateToMessage = (messageId: string, channelId?: string) => {
+  const handleNavigateToMessage = (
+    messageId: string,
+    channelId?: string,
+    isDM?: boolean,
+    userId?: string
+  ) => {
     setShowResults(false);
-    if (channelId) {
+    if (isDM && userId) {
+      navigate(`/dm/${userId}?messageId=${messageId}`);
+    } else if (channelId) {
       navigate(`/channels/${channelId}?messageId=${messageId}`);
-    } else {
-      // Handle DM navigation
-      navigate(`/dm/${messageId}`);
     }
   };
 

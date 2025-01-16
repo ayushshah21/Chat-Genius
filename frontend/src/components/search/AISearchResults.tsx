@@ -9,9 +9,18 @@ interface AISearchResultProps {
     channelId?: string;
     timestamp: string;
     userName?: string;
+    type?: "channel" | "dm";
+    senderId?: string;
+    receiverId?: string;
+    otherUserId?: string;
   }[];
   additionalContext?: string;
-  onNavigateToMessage: (messageId: string, channelId?: string) => void;
+  onNavigateToMessage: (
+    messageId: string,
+    channelId?: string,
+    isDM?: boolean,
+    userId?: string
+  ) => void;
   isLoading?: boolean;
 }
 
@@ -58,33 +67,64 @@ export default function AISearchResults({
           Supporting Evidence
         </h3>
         <div className="space-y-3">
-          {evidence.map((item) => (
-            <button
-              key={item.messageId}
-              onClick={() =>
-                onNavigateToMessage(item.messageId, item.channelId)
-              }
-              className="w-full text-left p-3 rounded-md hover:bg-[var(--background-hover)] transition-colors group"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start space-x-3">
-                  <MessageSquare className="w-4 h-4 text-[var(--text-muted)] mt-1" />
-                  <div>
-                    {item.userName && (
-                      <p className="text-sm font-medium text-[var(--text)]">
-                        {item.userName}
+          {evidence.map((item) => {
+            console.log("[AISearchResults] Evidence item:", {
+              messageId: item.messageId,
+              type: item.type,
+              channelId: item.channelId,
+              senderId: item.senderId,
+              receiverId: item.receiverId,
+              otherUserId: item.otherUserId,
+            });
+
+            return (
+              <button
+                key={item.messageId}
+                onClick={() => {
+                  console.log("[AISearchResults] Navigating with:", {
+                    messageId: item.messageId,
+                    channelId: item.channelId,
+                    isDM: item.type === "dm",
+                    userId: item.type === "dm" ? item.otherUserId : undefined,
+                  });
+                  onNavigateToMessage(
+                    item.messageId,
+                    item.channelId,
+                    item.type === "dm",
+                    item.type === "dm" ? item.otherUserId : undefined
+                  );
+                }}
+                className="w-full text-left p-3 rounded-md hover:bg-[var(--background-hover)] transition-colors group"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-3">
+                    <MessageSquare className="w-4 h-4 text-[var(--text-muted)] mt-1" />
+                    <div>
+                      {item.userName && (
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-[var(--text)]">
+                            {item.userName}
+                          </p>
+                          {item.type === "dm" && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--primary-light)] text-[var(--primary)]">
+                              DM
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <p className="text-sm text-[var(--text)]">
+                        {item.content}
                       </p>
-                    )}
-                    <p className="text-sm text-[var(--text)]">{item.content}</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">
-                      {item.timestamp}
-                    </p>
+                      <p className="text-xs text-[var(--text-muted)] mt-1">
+                        {item.timestamp}
+                      </p>
+                    </div>
                   </div>
+                  <ExternalLink className="w-4 h-4 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
-                <ExternalLink className="w-4 h-4 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </div>
 
