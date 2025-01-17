@@ -3,30 +3,22 @@ import { Send, Paperclip, Sparkles } from "lucide-react";
 import { socket } from "../../lib/socket";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
+import FilePreview from "./FilePreview";
 
 interface Props {
   channelId?: string | null;
   dmUserId?: string | null;
-  onSend?: (content: string) => Promise<void>;
   onMessageSent?: () => void;
   parentId?: string;
   placeholder?: string;
-  isThread?: boolean;
 }
 
-// Add type definition for AI suggestion response
+// AI suggestion response shape
 type AISuggestionResponse = {
   suggestion?: string;
-  originalContent?: string;
-  choices?: Array<{
-    message: {
-      content: string;
-    };
-  }>;
+  choices?: Array<{ message: { content: string } }>;
   generation?: string;
-  outputs?: Array<{
-    text: string;
-  }>;
+  outputs?: Array<{ text: string }>;
   completion?: string;
 };
 
@@ -39,7 +31,7 @@ export default function MessageInput({
 }: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +65,6 @@ export default function MessageInput({
 
   const requestSuggestions = () => {
     if (loadingSuggestions) return;
-
     setLoadingSuggestions(true);
     setSuggestions([]);
 
@@ -89,35 +80,43 @@ export default function MessageInput({
     setSuggestions([]);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const newFiles = Array.from(e.target.files);
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+  };
+
+  const handleRemoveFile = (fileToRemove: File) => {
+    setSelectedFiles((prev) => prev.filter((f) => f !== fileToRemove));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Form submit triggered", {
       hasMessage: !!message.trim(),
-      hasFile: !!selectedFile,
+      hasFiles: selectedFiles.length > 0,
       isSending: sending,
       channelId,
       dmUserId,
-      selectedFile: selectedFile
-        ? {
-            name: selectedFile.name,
-            type: selectedFile.type,
-            size: selectedFile.size,
-          }
-        : null,
+      selectedFiles: selectedFiles.map((file) => ({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      })),
     });
 
-    if ((!message.trim() && !selectedFile) || sending) {
+    if ((!message.trim() && selectedFiles.length === 0) || sending) {
       console.log("Submit cancelled:", {
         reason:
-          !message.trim() && !selectedFile ? "no content" : "already sending",
+          !message.trim() && selectedFiles.length === 0
+            ? "no content"
+            : "already sending",
         message: message,
-        selectedFile: selectedFile
-          ? {
-              name: selectedFile.name,
-              type: selectedFile.type,
-              size: selectedFile.size,
-            }
-          : null,
+        selectedFiles: selectedFiles.map((file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        })),
         sending,
       });
       return;
@@ -125,268 +124,20 @@ export default function MessageInput({
 
     setSending(true);
     try {
-      if (channelId) {
-        if (selectedFile) {
-          console.log("Starting file upload process:", {
-            fileName: selectedFile.name,
-            fileType: selectedFile.type,
-            fileSize: selectedFile.size,
-            channelId,
-            API_ENDPOINT: API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
-          });
-
-          // Get upload URL first
-          console.log("Requesting upload URL...", {
-            fileName: selectedFile.name,
-            fileType: selectedFile.type,
-            channelId,
-            dmUserId,
-            messageContent: message,
-          });
-          try {
-            const uploadResponse = await axiosInstance.post(
-              API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
-              {
-                fileName: selectedFile.name,
-                fileType: selectedFile.type,
-                channelId,
-                content: message,
-                parentId,
-              }
-            );
-            console.log("Received upload URL response:", {
-              ...uploadResponse.data,
-              isThread: !!parentId,
-            });
-
-            // Upload file to S3
-            console.log("Starting S3 upload...");
-            console.log("S3 Upload Request Details:", {
-              url: uploadResponse.data.uploadUrl,
-              method: "PUT",
-              contentType: selectedFile.type,
-              fileSize: selectedFile.size,
-              fileName: selectedFile.name,
-            });
-
-            try {
-              console.log(
-                "Making S3 request with URL:",
-                uploadResponse.data.uploadUrl
-              );
-
-              // Use XMLHttpRequest instead of fetch
-              const uploadPromise = new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open("PUT", uploadResponse.data.uploadUrl);
-
-                // Set headers before sending
-                xhr.setRequestHeader("Content-Type", selectedFile.type);
-                xhr.withCredentials = false; // Important for S3
-
-                xhr.onload = function () {
-                  if (xhr.status >= 200 && xhr.status < 300) {
-                    resolve({
-                      ok: true,
-                      status: xhr.status,
-                      statusText: xhr.statusText,
-                    });
-                  } else {
-                    reject(
-                      new Error(
-                        `Upload failed with status ${xhr.status}: ${xhr.responseText}`
-                      )
-                    );
-                  }
-                };
-
-                xhr.onerror = function (e) {
-                  console.error("XHR Error:", e);
-                  reject(new Error("Network error occurred during upload"));
-                };
-
-                xhr.upload.onprogress = (event) => {
-                  if (event.lengthComputable) {
-                    const percentComplete = (event.loaded / event.total) * 100;
-                    console.log(`Upload progress: ${percentComplete}%`);
-                  }
-                };
-
-                xhr.send(selectedFile);
-              });
-
-              await uploadPromise;
-              console.log("Upload completed successfully");
-
-              // Notify about file upload completion
-              const fileUploadData = {
-                channelId,
-                fileId: uploadResponse.data.file.id,
-                messageId: uploadResponse.data.messageId,
-                size: selectedFile.size,
-                parentId,
-              };
-              console.log(
-                "Emitting file_upload_complete with data:",
-                fileUploadData
-              );
-              socket.emit("file_upload_complete", fileUploadData);
-            } catch (uploadError) {
-              console.error("Upload process failed:", uploadError);
-              if (uploadError instanceof Error) {
-                console.error("Upload error details:", {
-                  name: uploadError.name,
-                  message: uploadError.message,
-                  stack: uploadError.stack,
-                });
-              }
-              throw uploadError;
-            }
-          } catch (uploadError) {
-            console.error("Upload process failed:", uploadError);
-            if (uploadError instanceof Error) {
-              console.error("Upload error details:", {
-                name: uploadError.name,
-                message: uploadError.message,
-                stack: uploadError.stack,
-              });
-            }
-            throw uploadError;
-          }
-        } else {
-          // Send text-only message
+      // Handle file uploads first
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          await uploadSingleFile(file, message);
+        }
+      } else {
+        // Send text-only message
+        if (channelId) {
           socket.emit("send_message", {
             content: message,
             channelId,
             parentId,
           });
-        }
-      } else if (dmUserId) {
-        if (selectedFile) {
-          console.log("Starting file upload process for DM:", {
-            fileName: selectedFile.name,
-            fileType: selectedFile.type,
-            fileSize: selectedFile.size,
-            dmUserId,
-            parentId,
-            API_ENDPOINT: API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
-          });
-
-          // Get upload URL first
-          console.log("Requesting upload URL...");
-          try {
-            const uploadResponse = await axiosInstance.post(
-              API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
-              {
-                fileName: selectedFile.name,
-                fileType: selectedFile.type,
-                dmUserId,
-                parentId,
-                content: message,
-              }
-            );
-            console.log(
-              "Received upload URL response for DM:",
-              uploadResponse.data
-            );
-
-            // Upload file to S3
-            console.log("Starting S3 upload...");
-            console.log("S3 Upload Request Details:", {
-              url: uploadResponse.data.uploadUrl,
-              method: "PUT",
-              contentType: selectedFile.type,
-              fileSize: selectedFile.size,
-              fileName: selectedFile.name,
-            });
-
-            try {
-              console.log(
-                "Making S3 request with URL:",
-                uploadResponse.data.uploadUrl
-              );
-
-              // Use XMLHttpRequest instead of fetch
-              const uploadPromise = new Promise((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                xhr.open("PUT", uploadResponse.data.uploadUrl);
-
-                // Set headers before sending
-                xhr.setRequestHeader("Content-Type", selectedFile.type);
-                xhr.withCredentials = false; // Important for S3
-
-                xhr.onload = function () {
-                  if (xhr.status >= 200 && xhr.status < 300) {
-                    resolve({
-                      ok: true,
-                      status: xhr.status,
-                      statusText: xhr.statusText,
-                    });
-                  } else {
-                    reject(
-                      new Error(
-                        `Upload failed with status ${xhr.status}: ${xhr.responseText}`
-                      )
-                    );
-                  }
-                };
-
-                xhr.onerror = function (e) {
-                  console.error("XHR Error:", e);
-                  reject(new Error("Network error occurred during upload"));
-                };
-
-                xhr.upload.onprogress = (event) => {
-                  if (event.lengthComputable) {
-                    const percentComplete = (event.loaded / event.total) * 100;
-                    console.log(`Upload progress: ${percentComplete}%`);
-                  }
-                };
-
-                xhr.send(selectedFile);
-              });
-
-              await uploadPromise;
-              console.log("Upload completed successfully");
-
-              // Notify about file upload completion
-              const fileUploadData = {
-                dmUserId,
-                fileId: uploadResponse.data.file.id,
-                messageId: uploadResponse.data.messageId,
-                size: selectedFile.size,
-                parentId,
-              };
-              console.log(
-                "Emitting file_upload_complete with data:",
-                fileUploadData
-              );
-              socket.emit("file_upload_complete", fileUploadData);
-            } catch (uploadError) {
-              console.error("Upload process failed:", uploadError);
-              if (uploadError instanceof Error) {
-                console.error("Upload error details:", {
-                  name: uploadError.name,
-                  message: uploadError.message,
-                  stack: uploadError.stack,
-                });
-              }
-              throw uploadError;
-            }
-          } catch (uploadError) {
-            console.error("Upload process failed:", uploadError);
-            if (uploadError instanceof Error) {
-              console.error("Upload error details:", {
-                name: uploadError.name,
-                message: uploadError.message,
-                stack: uploadError.stack,
-              });
-            }
-            throw uploadError;
-          }
-        } else {
-          // Send text-only DM
-          console.log(message + " " + dmUserId + " " + parentId);
+        } else if (dmUserId) {
           socket.emit("send_dm", {
             content: message,
             receiverId: dmUserId,
@@ -396,7 +147,7 @@ export default function MessageInput({
       }
 
       setMessage("");
-      setSelectedFile(null);
+      setSelectedFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -416,8 +167,158 @@ export default function MessageInput({
     }
   };
 
+  const uploadSingleFile = async (file: File, content: string) => {
+    const fileName = file.name;
+    const fileType = file.type;
+    const fileSize = file.size;
+
+    console.log("Starting file upload process:", {
+      fileName,
+      fileType,
+      fileSize,
+      channelId,
+      dmUserId,
+      API_ENDPOINT: API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
+    });
+
+    // Step 1: Get presigned upload URL
+    console.log("Requesting upload URL...", {
+      fileName,
+      fileType,
+      channelId,
+      dmUserId,
+      messageContent: content,
+    });
+
+    const uploadPayload: {
+      fileName: string;
+      fileType: string;
+      content: string;
+      parentId?: string;
+      channelId?: string;
+      dmUserId?: string;
+    } = {
+      fileName,
+      fileType,
+      content,
+      parentId,
+    };
+    if (channelId) uploadPayload.channelId = channelId;
+    if (dmUserId) uploadPayload.dmUserId = dmUserId;
+
+    try {
+      const uploadResponse = await axiosInstance.post(
+        API_CONFIG.ENDPOINTS.FILES.UPLOAD_URL,
+        uploadPayload
+      );
+      console.log("Received upload URL response:", {
+        ...uploadResponse.data,
+        isThread: !!parentId,
+      });
+
+      // Step 2: Upload file to S3
+      console.log("Starting S3 upload...");
+      console.log("S3 Upload Request Details:", {
+        url: uploadResponse.data.uploadUrl,
+        method: "PUT",
+        contentType: fileType,
+        fileSize,
+        fileName,
+      });
+
+      const { uploadUrl, file: fileData, messageId } = uploadResponse.data;
+
+      try {
+        console.log(
+          "Making S3 request with URL:",
+          uploadResponse.data.uploadUrl
+        );
+
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", uploadUrl);
+          xhr.setRequestHeader("Content-Type", fileType);
+          xhr.withCredentials = false;
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(null);
+            } else {
+              reject(`Failed to upload file to S3: ${xhr.statusText}`);
+            }
+          };
+          xhr.onerror = () => reject("Network error during S3 upload");
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = (event.loaded / event.total) * 100;
+              console.log(`Upload progress: ${percentComplete}%`);
+            }
+          };
+
+          xhr.send(file);
+        });
+
+        console.log("Upload completed successfully");
+
+        // Step 3: Notify backend about completion
+        const fileUploadData: {
+          fileId: string;
+          size: number;
+          messageId: string;
+          parentId?: string;
+          channelId?: string;
+          dmUserId?: string;
+        } = {
+          fileId: fileData.id,
+          size: fileSize,
+          messageId,
+          parentId,
+        };
+        if (channelId) fileUploadData.channelId = channelId;
+        if (dmUserId) fileUploadData.dmUserId = dmUserId;
+
+        console.log("Emitting file_upload_complete with data:", fileUploadData);
+        socket.emit("file_upload_complete", fileUploadData);
+      } catch (uploadError) {
+        console.error("Upload process failed:", uploadError);
+        if (uploadError instanceof Error) {
+          console.error("Upload error details:", {
+            name: uploadError.name,
+            message: uploadError.message,
+            stack: uploadError.stack,
+          });
+        }
+        throw uploadError;
+      }
+    } catch (uploadError) {
+      console.error("Upload process failed:", uploadError);
+      if (uploadError instanceof Error) {
+        console.error("Upload error details:", {
+          name: uploadError.name,
+          message: uploadError.message,
+          stack: uploadError.stack,
+        });
+      }
+      throw uploadError;
+    }
+  };
+
   return (
     <div className="flex flex-col w-full">
+      {/* File Preview Section */}
+      {selectedFiles.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {selectedFiles.map((file, idx) => (
+            <FilePreview
+              key={`${file.name}-${idx}`}
+              file={file}
+              onRemove={handleRemoveFile}
+            />
+          ))}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="flex items-center gap-2 w-full bg-[var(--background-light)] p-2 rounded-lg border border-[var(--border)] focus-within:ring-1 focus-within:ring-[var(--primary)] transition-shadow duration-200"
@@ -456,9 +357,11 @@ export default function MessageInput({
 
           <button
             type="submit"
-            disabled={(!message.trim() && !selectedFile) || sending}
+            disabled={
+              (!message.trim() && selectedFiles.length === 0) || sending
+            }
             className={`p-2.5 rounded-lg transition-all duration-200 ${
-              (message.trim() || selectedFile) && !sending
+              (message.trim() || selectedFiles.length > 0) && !sending
                 ? "hover:bg-[var(--background-hover)] text-[var(--primary)]"
                 : "opacity-50 cursor-not-allowed text-[var(--text-muted)]"
             }`}
@@ -470,14 +373,13 @@ export default function MessageInput({
         <input
           type="file"
           ref={fileInputRef}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) setSelectedFile(file);
-          }}
+          onChange={handleFileChange}
           className="hidden"
+          multiple
         />
       </form>
 
+      {/* AI Suggestions Section */}
       {loadingSuggestions && (
         <div className="mt-3 text-base text-[var(--text-muted)] flex items-center gap-2 px-2">
           <div className="animate-spin rounded-full h-5 w-5 border-2 border-[var(--primary)] border-t-transparent"></div>
