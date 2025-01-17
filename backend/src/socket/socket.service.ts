@@ -986,7 +986,8 @@ export async function setupSocketIO(server: Server) {
                         });
 
                         io.to(`channel_${message.channel.id}`).emit('message_deleted', {
-                            messageId: data.messageId
+                            messageId: data.messageId,
+                            channelId: message.channel.id
                         });
                     }
                 } catch (error) {
