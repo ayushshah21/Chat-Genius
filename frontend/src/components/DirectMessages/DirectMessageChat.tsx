@@ -10,6 +10,7 @@ import { MessageCircle } from "lucide-react";
 import ThreadPanel from "../Message/ThreadPanel";
 import EmojiReactions from "../Message/EmojiReactions";
 import { DeleteButton } from "../Message/DeleteButton";
+import { User } from "../../types/user";
 
 export default function DirectMessageChat() {
   const { userId } = useParams();
@@ -23,6 +24,7 @@ export default function DirectMessageChat() {
   const [selectedThread, setSelectedThread] = useState<DirectMessage | null>(
     null
   );
+  const [users, setUsers] = useState<User[]>([]);
 
   const isPreviewable = (fileType: string) => {
     return fileType.startsWith("image/") || fileType === "application/pdf";
@@ -306,6 +308,22 @@ export default function DirectMessageChat() {
     };
   }, [userId, currentUserId]);
 
+  // Add useEffect to fetch users
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+        );
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
   if (!userId) return null;
 
   return (
@@ -445,7 +463,11 @@ export default function DirectMessageChat() {
       {/* Message Input - Only show when no thread is open */}
       {!selectedThread && (
         <div className="p-4 border-t">
-          <MessageInput dmUserId={userId} placeholder="Type a message..." />
+          <MessageInput
+            dmUserId={userId}
+            placeholder="Type a message..."
+            users={users}
+          />
         </div>
       )}
     </div>

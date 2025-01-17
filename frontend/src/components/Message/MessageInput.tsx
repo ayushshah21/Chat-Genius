@@ -4,6 +4,9 @@ import { socket } from "../../lib/socket";
 import axiosInstance from "../../lib/axios";
 import { API_CONFIG } from "../../config/api.config";
 import FilePreview from "./FilePreview";
+import MentionPopup from "./MentionPopup";
+import useMention from "../../hooks/useMention";
+import { User } from "../../types/user";
 
 interface Props {
   channelId?: string | null;
@@ -11,6 +14,7 @@ interface Props {
   onMessageSent?: () => void;
   parentId?: string;
   placeholder?: string;
+  users?: User[];
 }
 
 // AI suggestion response shape
@@ -28,6 +32,7 @@ export default function MessageInput({
   onMessageSent,
   parentId,
   placeholder = "Type a message...",
+  users = [],
 }: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -35,6 +40,24 @@ export default function MessageInput({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Initialize mention functionality
+  const {
+    showPopup,
+    searchTerm,
+    selectedIndex,
+    position,
+    filteredUsers,
+    handleMentionTrigger,
+    handleKeyDown: handleMentionKeyDown,
+    handleSelect: handleMentionSelect,
+    closePopup,
+  } = useMention({
+    users,
+    inputRef,
+    setMessage,
+  });
 
   useEffect(() => {
     socket.on("ai_suggestion", (response: AISuggestionResponse) => {
@@ -304,6 +327,31 @@ export default function MessageInput({
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setMessage(newValue);
+    handleMentionTrigger(newValue, e.target.selectionStart || 0);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showPopup) {
+      // Prevent form submission when selecting a mention with Enter
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+      }
+      handleMentionKeyDown(e);
+      return;
+    }
+
+    // Handle normal message submission with Enter (without shift)
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!sending && (message.trim() || selectedFiles.length > 0)) {
+        handleSubmit(e as unknown as React.FormEvent);
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col w-full">
       {/* File Preview Section */}
@@ -332,12 +380,18 @@ export default function MessageInput({
           <Paperclip className="w-5 h-5 text-[var(--text-muted)] hover:text-[var(--text)]" />
         </button>
 
-        <input
-          type="text"
+        <textarea
+          ref={inputRef}
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 p-2 bg-transparent text-[var(--text)] text-base placeholder-[var(--text-muted)] focus:outline-none"
+          rows={1}
+          className="flex-1 p-2 bg-transparent text-[var(--text)] text-base placeholder-[var(--text-muted)] focus:outline-none resize-none"
+          style={{
+            minHeight: "40px",
+            maxHeight: "120px",
+          }}
         />
 
         <div className="flex items-center gap-1.5">
@@ -378,6 +432,18 @@ export default function MessageInput({
           multiple
         />
       </form>
+
+      {/* Mention Popup */}
+      {showPopup && (
+        <MentionPopup
+          users={filteredUsers}
+          searchTerm={searchTerm}
+          selectedIndex={selectedIndex}
+          position={position}
+          onSelect={handleMentionSelect}
+          onClose={closePopup}
+        />
+      )}
 
       {/* AI Suggestions Section */}
       {loadingSuggestions && (

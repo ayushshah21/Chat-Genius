@@ -11,6 +11,7 @@ import MessageInput from "./MessageInput";
 import EmojiReactions from "./EmojiReactions";
 import { DeleteButton } from "./DeleteButton";
 import TextToSpeech from "../TextToSpeech/TextToSpeech";
+import { User } from "../../types/user";
 
 interface Props {
   channelId?: string | null;
@@ -53,6 +54,7 @@ export default function MessageList({
   const [isSearchResult, setIsSearchResult] = useState(false);
   const [hasHighlightedMessage, setHasHighlightedMessage] = useState(false);
   const [avoidAutoScroll, setAvoidAutoScroll] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
 
   const handleMessageDeleted = (data: {
     messageId: string;
@@ -360,6 +362,22 @@ export default function MessageList({
     };
   }, [channelId, dmUserId, isSearchResult]);
 
+  // Add useEffect to fetch users
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get(
+          API_CONFIG.ENDPOINTS.USERS.AVAILABLE
+        );
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Failed to fetch users:", error);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
   if (loading) {
     return (
       <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[var(--background)]">
@@ -418,6 +436,7 @@ export default function MessageList({
             channelId={channelId}
             dmUserId={dmUserId}
             placeholder={channelId ? "Message #channel" : "Message user"}
+            users={users}
           />
         </div>
       )}
